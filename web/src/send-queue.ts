@@ -14,57 +14,53 @@
  */
 export interface KeySink {
   /** Sends text to the pane. */
-  sendText(text: string): void;
+  sendText(text: string): void
   /** Sends key names to the pane. */
-  sendKeys(keys: string[]): void;
+  sendKeys(keys: string[]): void
 }
 
 /**
  * One thing the reader did.
  */
-export type Action =
-  | { kind: 'text'; text: string }
-  | { kind: 'keys'; keys: string[] };
+export type Action = { kind: "text"; text: string } | { kind: "keys"; keys: string[] }
 
 /**
  * Puts the neighbours of the same kind into one call.
  */
 export function groupActions(actions: Action[]): Action[] {
-  const groups: Action[] = [];
+  const groups: Action[] = []
   for (const action of actions) {
-    const last = groups[groups.length - 1];
+    const last = groups[groups.length - 1]
     if (last !== undefined && last.kind === action.kind) {
-      if (last.kind === 'text' && action.kind === 'text') {
-        last.text += action.text;
-      } else if (last.kind === 'keys' && action.kind === 'keys') {
-        last.keys = last.keys.concat(action.keys);
+      if (last.kind === "text" && action.kind === "text") {
+        last.text += action.text
+      } else if (last.kind === "keys" && action.kind === "keys") {
+        last.keys = last.keys.concat(action.keys)
       }
-      continue;
+      continue
     }
     groups.push(
-      action.kind === 'text'
-        ? { kind: 'text', text: action.text }
-        : { kind: 'keys', keys: action.keys.slice() }
-    );
+      action.kind === "text" ? { kind: "text", text: action.text } : { kind: "keys", keys: action.keys.slice() },
+    )
   }
-  return groups;
+  return groups
 }
 
 /**
  * How long the sends wait for each other.
  */
-const FLUSH_DELAY = 16;
+const FLUSH_DELAY = 16
 
 export class KeyQueue {
-  private readonly sink: KeySink;
-  private readonly delay: number;
+  private readonly sink: KeySink
+  private readonly delay: number
   /** The actions that are not sent yet. */
-  private pending: Action[] = [];
-  private timer: number | null = null;
+  private pending: Action[] = []
+  private timer: number | null = null
 
   constructor(sink: KeySink, delay = FLUSH_DELAY) {
-    this.sink = sink;
-    this.delay = delay;
+    this.sink = sink
+    this.delay = delay
   }
 
   /**
@@ -72,10 +68,10 @@ export class KeyQueue {
    */
   text(value: string): void {
     if (value.length === 0) {
-      return;
+      return
     }
-    this.pending.push({ kind: 'text', text: value });
-    this.schedule();
+    this.pending.push({ kind: "text", text: value })
+    this.schedule()
   }
 
   /**
@@ -83,10 +79,10 @@ export class KeyQueue {
    */
   keys(names: string[]): void {
     if (names.length === 0) {
-      return;
+      return
     }
-    this.pending.push({ kind: 'keys', keys: names });
-    this.schedule();
+    this.pending.push({ kind: "keys", keys: names })
+    this.schedule()
   }
 
   /**
@@ -94,33 +90,33 @@ export class KeyQueue {
    */
   flush(): void {
     if (this.timer !== null) {
-      window.clearTimeout(this.timer);
-      this.timer = null;
+      window.clearTimeout(this.timer)
+      this.timer = null
     }
-    this.send();
+    this.send()
   }
 
   private schedule(): void {
     if (this.timer !== null) {
-      return;
+      return
     }
     this.timer = window.setTimeout(() => {
-      this.timer = null;
-      this.send();
-    }, this.delay);
+      this.timer = null
+      this.send()
+    }, this.delay)
   }
 
   private send(): void {
     if (this.pending.length === 0) {
-      return;
+      return
     }
-    const batch = this.pending;
-    this.pending = [];
+    const batch = this.pending
+    this.pending = []
     for (const group of groupActions(batch)) {
-      if (group.kind === 'text') {
-        this.sink.sendText(group.text);
+      if (group.kind === "text") {
+        this.sink.sendText(group.text)
       } else {
-        this.sink.sendKeys(group.keys);
+        this.sink.sendKeys(group.keys)
       }
     }
   }

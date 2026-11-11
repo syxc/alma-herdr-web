@@ -20,18 +20,47 @@
   color-scheme: dark;
 }
 
-* { box-sizing: border-box; }
+* {
+  box-sizing: border-box;
+}
 
-html, body {
+html,
+body {
   margin: 0;
   height: 100%;
   background: var(--bg);
   color: var(--fg);
-  font: 15px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Symbols Nerd Font Mono", sans-serif;
+  font:
+    15px / 1.45 -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    Roboto,
+    "Symbols Nerd Font Mono",
+    sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 
-.hidden { display: none !important; }
+button {
+  background: var(--surface-2);
+  color: var(--fg);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 6px 11px;
+  cursor: pointer;
+  font: inherit;
+}
+button:hover {
+  border-color: #4c5361;
+}
+button.active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.hidden {
+  /* biome-ignore lint/complexity/noImportantStyles: Visibility toggles must override component display rules. */
+  display: none !important;
+}
 
 /* The sign in ------------------------------------------------------- */
 
@@ -89,7 +118,10 @@ html, body {
   font: inherit;
   font-size: 16px;
 }
-.login-form input:focus { outline: none; border-color: var(--accent); }
+.login-form input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
 
 .login-note {
   margin: 14px 0 0;
@@ -97,7 +129,9 @@ html, body {
   color: var(--fg-dim);
   min-height: 18px;
 }
-.login-note.error { color: var(--danger); }
+.login-note.error {
+  color: var(--danger);
+}
 
 /* Round controls ---------------------------------------------------- */
 
@@ -114,8 +148,12 @@ html, body {
   place-items: center;
   cursor: pointer;
 }
-.round-outline:hover { border-color: #4c5361; }
-.round-outline:active { background: var(--surface-2); }
+.round-outline:hover {
+  border-color: #4c5361;
+}
+.round-outline:active {
+  background: var(--surface-2);
+}
 
 .round-fill {
   width: 48px;
@@ -130,8 +168,13 @@ html, body {
   place-items: center;
   cursor: pointer;
 }
-.command-glyph { font-size: 18px; line-height: 1; }
-.round-fill:active { filter: brightness(0.92); }
+.command-glyph {
+  font-size: 18px;
+  line-height: 1;
+}
+.round-fill:active {
+  filter: brightness(0.92);
+}
 
 /* The bar at the top of a page --------------------------------------- */
 
@@ -144,8 +187,12 @@ html, body {
   min-height: 62px;
   flex: none;
 }
-.app-bar > :first-child { justify-self: start; }
-.app-bar > :last-child { justify-self: end; }
+.app-bar > :first-child {
+  justify-self: start;
+}
+.app-bar > :last-child {
+  justify-self: end;
+}
 
 /* The bar of one terminal keeps the number of the tab and the state of the
    pane on the left, the way the Alma app puts them. */
@@ -153,7 +200,6 @@ html, body {
   grid-template-columns: auto 1fr auto;
   gap: 0;
 }
-#screen-detail .app-bar-right { gap: 10px; }
 
 .app-bar-center {
   min-width: 0;
@@ -172,8 +218,14 @@ html, body {
   color: var(--fg-strong);
   white-space: nowrap;
 }
-.app-bar-title .mark { color: var(--fg); font-size: 15px; }
-.app-bar-title .signal { color: var(--fg-dim); flex: none; }
+.app-bar-title .mark {
+  color: var(--fg);
+  font-size: 15px;
+}
+.app-bar-title .signal {
+  color: var(--fg-dim);
+  flex: none;
+}
 
 /* The round button and the pill at the right of the bar. */
 .app-bar-right {
@@ -181,6 +233,9 @@ html, body {
   align-items: center;
   gap: 10px;
   flex: none;
+}
+#screen-detail .app-bar-right {
+  gap: 10px;
 }
 
 .app-bar-sub {
@@ -194,7 +249,9 @@ html, body {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.app-bar-sub .sep { color: var(--fg-dim); }
+.app-bar-sub .sep {
+  color: var(--fg-dim);
+}
 
 .dot {
   width: 8px;
@@ -203,10 +260,18 @@ html, body {
   border-radius: 50%;
   background: var(--fg-dim);
 }
-.dot.working { background: var(--warn); }
-.dot.blocked { background: var(--danger); }
-.dot.done { background: var(--accent); }
-.dot.idle { background: #5b6675; }
+.dot.working {
+  background: var(--warn);
+}
+.dot.blocked {
+  background: var(--danger);
+}
+.dot.done {
+  background: var(--accent);
+}
+.dot.idle {
+  background: #5b6675;
+}
 
 .pill-group {
   display: flex;
@@ -231,12 +296,21 @@ html, body {
   place-items: center;
   cursor: pointer;
 }
-.pill-button + .pill-button { border-left: 1px solid var(--line); }
+.pill-button + .pill-button {
+  border-left: 1px solid var(--line);
+}
 /* The Alma app draws the pill of the list without a line between the
    buttons. */
-#screen-list .pill-button + .pill-button { border-left: none; }
-.pill-button:hover { background: var(--surface-2); }
-.pill-button.accent { color: var(--accent); font-size: 20px; }
+#screen-list .pill-button + .pill-button {
+  border-left: none;
+}
+.pill-button:hover {
+  background: var(--surface-2);
+}
+.pill-button.accent {
+  color: var(--accent);
+  font-size: 20px;
+}
 
 .app-bar .round-outline {
   width: 50px;
@@ -256,7 +330,10 @@ html, body {
   padding: 2px 2px;
   cursor: pointer;
 }
-.tab-switch .chevron { color: var(--fg-muted); flex: none; }
+.tab-switch .chevron {
+  color: var(--fg-muted);
+  flex: none;
+}
 
 /* The list of the terminals ------------------------------------------ */
 
@@ -282,7 +359,12 @@ html, body {
   text-align: left;
   cursor: pointer;
 }
-.section-head .chevron { color: var(--fg-muted); flex: none; display: grid; place-items: center; }
+.section-head .chevron {
+  color: var(--fg-muted);
+  flex: none;
+  display: grid;
+  place-items: center;
+}
 
 .session-row {
   position: relative;
@@ -300,7 +382,7 @@ html, body {
 }
 /* The line under a row starts with the text, the Alma app draws it that way. */
 .session-row::after {
-  content: '';
+  content: "";
   position: absolute;
   left: 19px;
   right: 0;
@@ -308,9 +390,14 @@ html, body {
   height: 1px;
   background: var(--line);
 }
-.session-row:hover { background: rgba(255, 255, 255, 0.03); }
+.session-row:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
 
-.session-body { flex: 1; min-width: 0; }
+.session-body {
+  flex: 1;
+  min-width: 0;
+}
 
 .session-number {
   display: block;
@@ -330,8 +417,18 @@ html, body {
   white-space: nowrap;
   overflow: hidden;
 }
-.session-sub .glyph { color: var(--fg-dim); flex: none; display: grid; place-items: center; }
-.session-sub .path { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.session-sub .glyph {
+  color: var(--fg-dim);
+  flex: none;
+  display: grid;
+  place-items: center;
+}
+.session-sub .path {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 
 .session-tail {
   display: flex;
@@ -340,8 +437,14 @@ html, body {
   flex: none;
   color: var(--fg-muted);
 }
-.session-tail .chevron { color: var(--fg-dim); display: grid; place-items: center; }
-.session-tail .dot { background: var(--accent); }
+.session-tail .chevron {
+  color: var(--fg-dim);
+  display: grid;
+  place-items: center;
+}
+.session-tail .dot {
+  background: var(--accent);
+}
 
 .session-empty {
   padding: 28px 16px;
@@ -380,9 +483,16 @@ html, body {
   text-align: left;
   cursor: pointer;
 }
-.popover-item:hover { background: rgba(255, 255, 255, 0.04); }
-.popover-item:disabled { cursor: default; opacity: 0.45; }
-.popover-item:disabled:hover { background: none; }
+.popover-item:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+.popover-item:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+.popover-item:disabled:hover {
+  background: none;
+}
 
 .popover-glyph {
   width: 30px;
@@ -392,10 +502,16 @@ html, body {
   line-height: 1.2;
   color: var(--accent);
 }
-.popover-glyph.quiet { color: var(--fg-dim); }
-.popover-glyph.on { color: var(--fg-strong); }
+.popover-glyph.quiet {
+  color: var(--fg-dim);
+}
+.popover-glyph.on {
+  color: var(--fg-strong);
+}
 
-.popover-text { min-width: 0; }
+.popover-text {
+  min-width: 0;
+}
 
 .popover-label {
   display: block;
@@ -422,7 +538,9 @@ html, body {
 }
 
 /* The card of the tabs opens in the same place as the other cards. */
-.popover-menu .popover-item { padding: 10px 16px; }
+.popover-menu .popover-item {
+  padding: 10px 16px;
+}
 
 /* The terminal -------------------------------------------------------- */
 
@@ -457,7 +575,9 @@ html, body {
   overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
 }
-#terminal-view.scroll-x { overflow-x: auto; }
+#terminal-view.scroll-x {
+  overflow-x: auto;
+}
 
 #terminal {
   touch-action: pan-y;
@@ -465,7 +585,12 @@ html, body {
   -webkit-user-select: none;
 }
 
-#terminal { width: 100%; height: 100%; display: block; outline: none; }
+#terminal {
+  width: 100%;
+  height: 100%;
+  display: block;
+  outline: none;
+}
 
 .statusbar {
   flex: none;
@@ -473,8 +598,12 @@ html, body {
   color: var(--fg-dim);
   font-size: 12px;
 }
-.statusbar:empty { display: none; }
-.statusbar.error { color: var(--danger); }
+.statusbar:empty {
+  display: none;
+}
+.statusbar.error {
+  color: var(--danger);
+}
 
 /* The keys and the field under the terminal --------------------------- */
 
@@ -486,7 +615,9 @@ html, body {
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
 }
-.key-chips:empty { display: none; }
+.key-chips:empty {
+  display: none;
+}
 
 .key-chip {
   flex: none;
@@ -495,11 +626,21 @@ html, body {
   border-radius: 999px;
   background: transparent;
   color: var(--fg);
-  font: 14px/1 ui-monospace, SFMono-Regular, Menlo, Consolas, "Symbols Nerd Font Mono", monospace;
+  font:
+    14px / 1 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Consolas,
+    "Symbols Nerd Font Mono",
+    monospace;
   cursor: pointer;
 }
-.key-chip:hover { border-color: #4c5361; }
-.key-chip:active { background: var(--surface-2); }
+.key-chip:hover {
+  border-color: #4c5361;
+}
+.key-chip:active {
+  background: var(--surface-2);
+}
 
 .command-bar {
   flex: none;
@@ -522,7 +663,10 @@ html, body {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Symbols Nerd Font Mono", monospace;
   font-size: 17px;
 }
-.command-bar input:focus { outline: none; border-color: #4c5361; }
+.command-bar input:focus {
+  outline: none;
+  border-color: #4c5361;
+}
 
 .command-bar .round-fill,
 .command-bar .round-outline {
@@ -558,8 +702,12 @@ html, body {
 
 /* On a wide screen the tree can be folded away for the terminal alone. */
 @media (min-width: 761px) {
-  #app.no-sidebar { grid-template-columns: minmax(0, 1fr); }
-  #app.no-sidebar #sidebar { display: none; }
+  #app.no-sidebar {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  #app.no-sidebar #sidebar {
+    display: none;
+  }
 }
 
 .sidebar-header {
@@ -570,7 +718,10 @@ html, body {
   border-bottom: 1px solid var(--line);
 }
 
-.brand { font-weight: 600; letter-spacing: 0.02em; }
+.brand {
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
 
 .pill {
   font-size: 11px;
@@ -579,8 +730,14 @@ html, body {
   border: 1px solid var(--line);
   color: var(--fg-muted);
 }
-.pill.online { color: var(--accent); border-color: #2a4557; }
-.pill.offline { color: var(--danger); border-color: #4a2626; }
+.pill.online {
+  color: var(--accent);
+  border-color: #2a4557;
+}
+.pill.offline {
+  color: var(--danger);
+  border-color: #4a2626;
+}
 
 .sidebar-actions {
   display: flex;
@@ -588,21 +745,15 @@ html, body {
   padding: 10px 14px;
   border-bottom: 1px solid var(--line);
 }
-.sidebar-actions button { flex: 1; }
-
-button {
-  background: var(--surface-2);
-  color: var(--fg);
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 6px 11px;
-  cursor: pointer;
-  font: inherit;
+.sidebar-actions button {
+  flex: 1;
 }
-button:hover { border-color: #4c5361; }
-button.active { border-color: var(--accent); color: var(--accent); }
 
-.tree { flex: 1; overflow-y: auto; padding: 6px 0 20px; }
+.tree {
+  flex: 1;
+  overflow-y: auto;
+  padding: 6px 0 20px;
+}
 
 .row {
   display: flex;
@@ -614,17 +765,39 @@ button.active { border-color: var(--accent); color: var(--accent); }
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.row:hover { background: rgba(255, 255, 255, 0.04); }
-.row.selected { background: rgba(98, 175, 236, 0.12); }
-.row .label { overflow: hidden; text-overflow: ellipsis; }
-.row.workspace { font-weight: 600; margin-top: 6px; }
-.row.tab { padding-left: 24px; color: var(--fg-muted); }
-.row.pane { padding-left: 38px; color: var(--fg-dim); }
-.row .count { margin-left: auto; color: var(--fg-dim); font-size: 11px; }
+.row:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+.row.selected {
+  background: rgba(98, 175, 236, 0.12);
+}
+.row .label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.row.workspace {
+  font-weight: 600;
+  margin-top: 6px;
+}
+.row.tab {
+  padding-left: 24px;
+  color: var(--fg-muted);
+}
+.row.pane {
+  padding-left: 38px;
+  color: var(--fg-dim);
+}
+.row .count {
+  margin-left: auto;
+  color: var(--fg-dim);
+  font-size: 11px;
+}
 
 /* The remote access and the pairing ----------------------------------- */
 
-.remote-details { border-top: 1px solid var(--line); }
+.remote-details {
+  border-top: 1px solid var(--line);
+}
 .remote-details > summary {
   padding: 12px 14px;
   font-size: 11px;
@@ -634,11 +807,18 @@ button.active { border-color: var(--accent); color: var(--accent); }
   cursor: pointer;
   user-select: none;
 }
-.remote-details > summary { list-style: none; }
-.remote-details > summary::-webkit-details-marker { display: none; }
-.remote-details > summary::marker { content: ''; }
-.remote-details > summary::after { content: ' \25be'; }
-.remote-details[open] > summary::after { content: ' \25b4'; }
+.remote-details > summary {
+  list-style: none;
+}
+.remote-details > summary::-webkit-details-marker {
+  display: none;
+}
+.remote-details > summary::marker {
+  content: "";
+}
+.remote-details > summary::after {
+  content: " \25be";
+}
 
 .remote-panel {
   padding: 0 14px 14px;
@@ -646,9 +826,19 @@ button.active { border-color: var(--accent); color: var(--accent); }
   flex-direction: column;
   gap: 8px;
 }
-.remote-panel.hidden { display: none; }
-.remote-panel .hint { margin: 0; font-size: 11px; line-height: 1.45; color: var(--fg-dim); }
-.remote-panel .field { display: flex; gap: 6px; }
+.remote-panel.hidden {
+  display: none;
+}
+.remote-panel .hint {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--fg-dim);
+}
+.remote-panel .field {
+  display: flex;
+  gap: 6px;
+}
 .remote-panel input {
   flex: 1;
   min-width: 0;
@@ -659,11 +849,27 @@ button.active { border-color: var(--accent); color: var(--accent); }
   padding: 6px 9px;
   font: inherit;
 }
-.remote-panel input:focus { outline: none; border-color: var(--accent); }
-.remote-state { font-size: 11px; color: var(--fg-dim); word-break: break-word; }
-.remote-state.error { color: var(--danger); }
-.relay-pair { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
-.relay-pair.hidden { display: none; }
+.remote-panel input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.remote-state {
+  font-size: 11px;
+  color: var(--fg-dim);
+  word-break: break-word;
+}
+.remote-state.error {
+  color: var(--danger);
+}
+.relay-pair {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-start;
+}
+.relay-pair.hidden {
+  display: none;
+}
 .relay-pair img {
   width: 148px;
   height: 148px;
@@ -671,7 +877,11 @@ button.active { border-color: var(--accent); color: var(--accent); }
   padding: 6px;
   border-radius: 6px;
 }
-.relay-pair code { font-size: 10px; color: var(--fg-dim); word-break: break-all; }
+.relay-pair code {
+  font-size: 10px;
+  color: var(--fg-dim);
+  word-break: break-all;
+}
 
 .remote-banner {
   flex: none;
@@ -686,7 +896,10 @@ button.active { border-color: var(--accent); color: var(--accent); }
  * The pairing stays out of the way: it is a line that opens, not a panel
  * that pushes the list of the terminals down.
  */
-.pair-details { flex: none; border-bottom: 1px solid var(--line); }
+.pair-details {
+  flex: none;
+  border-bottom: 1px solid var(--line);
+}
 .pair-details > summary {
   padding: 10px 16px;
   font-size: 13px;
@@ -694,11 +907,25 @@ button.active { border-color: var(--accent); color: var(--accent); }
   cursor: pointer;
   user-select: none;
 }
-.pair-details > summary { list-style: none; }
-.pair-details > summary::-webkit-details-marker { display: none; }
-.pair-details > summary::marker { content: ''; }
-.pair-details > summary::after { content: ' \25be'; float: right; }
-.pair-details[open] > summary::after { content: ' \25b4'; }
+.pair-details > summary {
+  list-style: none;
+}
+.pair-details > summary::-webkit-details-marker {
+  display: none;
+}
+.pair-details > summary::marker {
+  content: "";
+}
+.pair-details > summary::after {
+  content: " \25be";
+  float: right;
+}
+.remote-details[open] > summary::after {
+  content: " \25b4";
+}
+.pair-details[open] > summary::after {
+  content: " \25b4";
+}
 
 .pair-panel {
   display: flex;
@@ -716,7 +943,10 @@ button.active { border-color: var(--accent); color: var(--accent); }
   padding: 6px 9px;
   font: inherit;
 }
-.pair-panel input:focus { outline: none; border-color: var(--accent); }
+.pair-panel input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
 
 .scan-panel {
   display: flex;
@@ -726,34 +956,78 @@ button.active { border-color: var(--accent); color: var(--accent); }
   border-bottom: 1px solid var(--line);
   background: var(--surface);
 }
-.scan-panel.hidden { display: none; }
+.scan-panel.hidden {
+  display: none;
+}
 .scan-panel video {
   width: 100%;
   max-height: 320px;
   border-radius: 8px;
   background: #000;
 }
-.scan-row { display: flex; align-items: center; gap: 10px; }
-.scan-status { flex: 1; color: var(--fg-dim); font-size: 12px; }
-.scan-status.error { color: var(--danger); }
+.scan-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.scan-status {
+  flex: 1;
+  color: var(--fg-dim);
+  font-size: 12px;
+}
+.scan-status.error {
+  color: var(--danger);
+}
 
-.relay-pair .qr { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; }
-.relay-pair .qr.hidden { display: none; }
-.relay-pair .qr span { font-size: 10px; color: var(--fg-dim); text-transform: uppercase; letter-spacing: 0.05em; }
-.relay-pair img.broken { display: none; }
+.relay-pair .qr {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-start;
+}
+.relay-pair .qr.hidden {
+  display: none;
+}
+.relay-pair .qr span {
+  font-size: 10px;
+  color: var(--fg-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.relay-pair img.broken {
+  display: none;
+}
 
-.qr-note { margin: 0; font-size: 11px; line-height: 1.45; color: var(--fg-dim); }
-.qr-note.hidden { display: none; }
+.qr-note {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--fg-dim);
+}
+.qr-note.hidden {
+  display: none;
+}
 
 /* A phone -------------------------------------------------------------- */
 
-.scrim { display: none; }
+.scrim {
+  display: none;
+}
 
 @media (max-width: 760px) {
-  html, body { height: 100dvh; }
-  body { font-size: 15px; -webkit-text-size-adjust: 100%; }
+  html,
+  body {
+    height: 100dvh;
+  }
+  body {
+    font-size: 15px;
+    -webkit-text-size-adjust: 100%;
+  }
 
-  #app { grid-template-columns: 1fr; height: 100dvh; }
+  #app {
+    grid-template-columns: 1fr;
+    height: 100dvh;
+  }
 
   /*
    * The tree of the sessions turns into a drawer, so the terminal keeps the
@@ -770,7 +1044,9 @@ button.active { border-color: var(--accent); color: var(--accent); }
     transition: transform 180ms ease;
     box-shadow: 0 0 30px rgba(0, 0, 0, 0.55);
   }
-  #sidebar.open { transform: translateX(0); }
+  #sidebar.open {
+    transform: translateX(0);
+  }
 
   .scrim {
     display: block;
@@ -779,22 +1055,52 @@ button.active { border-color: var(--accent); color: var(--accent); }
     z-index: 25;
     background: rgba(0, 0, 0, 0.55);
   }
-  .scrim.hidden { display: none; }
+  .scrim.hidden {
+    display: none;
+  }
 
-  .app-bar { padding: 4px 19px; min-height: 58px; }
+  .app-bar {
+    padding: 4px 19px;
+    min-height: 58px;
+  }
 
-  .section-head { padding: 33px 19px 13px; }
-  .session-row { padding: 13px 19px 16px; }
+  .section-head {
+    padding: 33px 19px 13px;
+  }
+  .session-row {
+    padding: 13px 19px 16px;
+  }
 
-  .key-chips { padding: 6px 12px; }
-  .key-chip { padding: 6px 11px; }
+  .key-chips {
+    padding: 6px 12px;
+  }
+  .key-chip {
+    padding: 6px 11px;
+  }
 
-  .statusbar { font-size: 12px; padding: 4px 14px; }
+  .statusbar {
+    font-size: 12px;
+    padding: 4px 14px;
+  }
 
-  .pair-panel { flex-wrap: wrap; padding: 10px 12px; }
-  .pair-panel input { flex: 1 0 100%; min-width: 0; }
-  .pair-panel button { flex: 1 1 0; min-width: 0; }
+  .pair-panel {
+    flex-wrap: wrap;
+    padding: 10px 12px;
+  }
+  .pair-panel input {
+    flex: 1 0 100%;
+    min-width: 0;
+  }
+  .pair-panel button {
+    flex: 1 1 0;
+    min-width: 0;
+  }
 
-  .relay-pair img { width: 132px; height: 132px; }
-  .relay-pair code { font-size: 11px; }
+  .relay-pair img {
+    width: 132px;
+    height: 132px;
+  }
+  .relay-pair code {
+    font-size: 11px;
+  }
 }

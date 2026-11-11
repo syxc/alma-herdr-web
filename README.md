@@ -28,14 +28,14 @@ npm start
 
 打开 <http://127.0.0.1:7331>。本机 agent 直接连接 herdr 的 Unix socket，使用同源 HTTP API 和 WebSocket 提供状态与终端操作。
 
-| 变量 | 默认值 | 用途 |
-| --- | --- | --- |
-| `HERDR_WEB_HOST` | `127.0.0.1` | HTTP 监听地址 |
-| `HERDR_WEB_PORT` | `7331` | HTTP 端口 |
-| `HERDR_SOCKET_PATH` | `~/.config/herdr/herdr.sock` | herdr socket 路径 |
-| `HERDR_SESSION` | 未设置 | 使用命名会话的 socket |
-| `HERDR_WEB_RELAY_URL` | 未设置 | 启动时注册的 relay |
-| `HERDR_WEB_PASSWORD` | 未设置 | 本机 HTTP API 的登录口令 |
+| 变量                  | 默认值                       | 用途                     |
+| --------------------- | ---------------------------- | ------------------------ |
+| `HERDR_WEB_HOST`      | `127.0.0.1`                  | HTTP 监听地址            |
+| `HERDR_WEB_PORT`      | `7331`                       | HTTP 端口                |
+| `HERDR_SOCKET_PATH`   | `~/.config/herdr/herdr.sock` | herdr socket 路径        |
+| `HERDR_SESSION`       | 未设置                       | 使用命名会话的 socket    |
+| `HERDR_WEB_RELAY_URL` | 未设置                       | 启动时注册的 relay       |
+| `HERDR_WEB_PASSWORD`  | 未设置                       | 本机 HTTP API 的登录口令 |
 
 socket 路径优先使用 `HERDR_SOCKET_PATH`，其次是 `HERDR_SESSION` 对应的 `~/.config/herdr/sessions/<name>/herdr.sock`，最后使用默认路径。
 
@@ -94,7 +94,21 @@ npm run deploy:worker    # 发布或更新同名 Worker
 
 ## 开发与检查
 
+Biome 2.6.7 统一检查 JavaScript、TypeScript、JSON/JSONC、CSS、HTML 和 Markdown。`biome.json` 参考 [pi 的配置](https://github.com/earendil-works/pi/blob/main/biome.json)，使用两空格缩进、120 列宽和按需分号。依赖、构建产物、第三方字体及生成的图标清单不参与检查。
+
+| 命令                   | 用途                                       |
+| ---------------------- | ------------------------------------------ |
+| `npm run format`       | 格式化代码和 Markdown                      |
+| `npm run format:check` | 只检查格式                                 |
+| `npm run lint`         | 检查 lint，警告也视为失败                  |
+| `npm run check`        | 一次检查格式、lint 和导入顺序              |
+| `npm run check:fix`    | 应用格式化和安全修复                       |
+| `npm run typecheck`    | 检查 agent、Web 和 mock 的 TypeScript 类型 |
+
+完整检查：
+
 ```bash
+npm run check
 npm run build
 npm test
 npm run privacy-check
@@ -102,11 +116,11 @@ npm run privacy-check
 
 自动测试使用模拟 herdr 与 relay，不依赖真实桌面端。浏览器检查入口：
 
-| 命令 | 检查内容 |
-| --- | --- |
-| `node scripts/check-icon-font-browser.mjs` | 字体按需加载、失败恢复、Canvas 补绘和字形比较 |
-| `node scripts/check-recovery-browser.mjs` | 完整应用的刷新配对恢复、无响应和断线重连 |
-| `node scripts/e2e-check.mjs` | 使用本机身份，经真实 relay 读取面板、输入命令并检查回显 |
+| 命令                                       | 检查内容                                                |
+| ------------------------------------------ | ------------------------------------------------------- |
+| `node scripts/check-icon-font-browser.mjs` | 字体按需加载、失败恢复、Canvas 补绘和字形比较           |
+| `node scripts/check-recovery-browser.mjs`  | 完整应用的刷新配对恢复、无响应和断线重连                |
+| `node scripts/e2e-check.mjs`               | 使用本机身份，经真实 relay 读取面板、输入命令并检查回显 |
 
 前两项输出仅监听回环地址的检查页面。第三项会实际向第一个面板输入命令，需在可操作的测试面板上运行。手机软键盘、中文 IME 和键盘遮挡需按[界面验收步骤](docs/ui-design.md#验收)在真机检查，桌面测试不覆盖这些行为。
 
@@ -114,14 +128,14 @@ npm run privacy-check
 
 ## 代码导航
 
-| 目录或模块 | 职责 |
-| --- | --- |
-| `agent/src/` | herdr socket、状态缓存、HTTP 服务、relay 注册与加密桥接 |
-| `web/src/main.ts`、`detail.ts` | 页面状态、配对、会话选择与终端交互 |
-| `web/src/api.ts`、`alma.ts`、`tunnel.ts` | 本地 API 与两种远端协议 |
-| `web/src/terminal.ts`、`ghostty-vt.ts`、`layout.ts` | 渲染、VT 绑定与窄屏重排 |
-| `web/src/input.ts`、`send-queue.ts`、`keys.ts` | 终端输入与按序发送 |
-| `mock/`、`tests/`、`scripts/` | 模拟服务、回归与构建检查 |
+| 目录或模块                                          | 职责                                                    |
+| --------------------------------------------------- | ------------------------------------------------------- |
+| `agent/src/`                                        | herdr socket、状态缓存、HTTP 服务、relay 注册与加密桥接 |
+| `web/src/main.ts`、`detail.ts`                      | 页面状态、配对、会话选择与终端交互                      |
+| `web/src/api.ts`、`alma.ts`、`tunnel.ts`            | 本地 API 与两种远端协议                                 |
+| `web/src/terminal.ts`、`ghostty-vt.ts`、`layout.ts` | 渲染、VT 绑定与窄屏重排                                 |
+| `web/src/input.ts`、`send-queue.ts`、`keys.ts`      | 终端输入与按序发送                                      |
+| `mock/`、`tests/`、`scripts/`                       | 模拟服务、回归与构建检查                                |
 
 ## 限制
 

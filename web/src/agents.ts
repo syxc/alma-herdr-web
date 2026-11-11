@@ -1,4 +1,4 @@
-import { type AgentSessionRef, type PaneRecord } from './api.js';
+import type { AgentSessionRef, PaneRecord } from "./api.js"
 
 /**
  * What the client knows about one coding agent.
@@ -12,21 +12,21 @@ import { type AgentSessionRef, type PaneRecord } from './api.js';
  */
 export interface AgentSpec {
   /** The kind herdr knows the agent by. */
-  kind: string;
+  kind: string
   /** The name the reader sees. */
-  label: string;
+  label: string
   /** The kinds of session the agent can open again. */
-  sessionKinds: SessionKind[];
+  sessionKinds: SessionKind[]
   /** The arguments that open the session again, without the command itself. */
-  resumeArgs(value: string): string[];
+  resumeArgs(value: string): string[]
   /** What the agent gets when the reader wants it to carry on. */
-  continuePrompt: string;
+  continuePrompt: string
 }
 
 /**
  * How herdr names the session of an agent.
  */
-export type SessionKind = 'id' | 'path';
+export type SessionKind = "id" | "path"
 
 /**
  * The agents the client can restart and continue.
@@ -36,41 +36,41 @@ export type SessionKind = 'id' | 'path';
  */
 const SPECS: AgentSpec[] = [
   {
-    kind: 'claude',
-    label: 'Claude Code',
-    sessionKinds: ['id'],
-    resumeArgs: value => ['--resume', value],
-    continuePrompt: '继续'
+    kind: "claude",
+    label: "Claude Code",
+    sessionKinds: ["id"],
+    resumeArgs: (value) => ["--resume", value],
+    continuePrompt: "继续",
   },
   {
-    kind: 'codex',
-    label: 'Codex',
-    sessionKinds: ['id'],
-    resumeArgs: value => ['resume', value],
-    continuePrompt: '继续'
+    kind: "codex",
+    label: "Codex",
+    sessionKinds: ["id"],
+    resumeArgs: (value) => ["resume", value],
+    continuePrompt: "继续",
   },
   {
-    kind: 'pi',
-    label: 'Pi',
-    sessionKinds: ['id', 'path'],
-    resumeArgs: value => ['--session', value],
-    continuePrompt: '继续'
+    kind: "pi",
+    label: "Pi",
+    sessionKinds: ["id", "path"],
+    resumeArgs: (value) => ["--session", value],
+    continuePrompt: "继续",
   },
   {
-    kind: 'opencode',
-    label: 'OpenCode',
-    sessionKinds: ['id'],
-    resumeArgs: value => ['--session', value],
-    continuePrompt: '继续'
+    kind: "opencode",
+    label: "OpenCode",
+    sessionKinds: ["id"],
+    resumeArgs: (value) => ["--session", value],
+    continuePrompt: "继续",
   },
   {
-    kind: 'omp',
-    label: 'omp',
-    sessionKinds: ['id', 'path'],
-    resumeArgs: value => ['--resume=' + value],
-    continuePrompt: '继续'
-  }
-];
+    kind: "omp",
+    label: "omp",
+    sessionKinds: ["id", "path"],
+    resumeArgs: (value) => [`--resume=${value}`],
+    continuePrompt: "继续",
+  },
+]
 
 /**
  * The kind of the agent in a pane, as herdr names it.
@@ -79,30 +79,30 @@ const SPECS: AgentSpec[] = [
  * read twice.
  */
 export function agentKind(pane: PaneRecord): string {
-  const session = pane.agent_session;
+  const session = pane.agent_session
   if (session !== null && session.agent.length > 0) {
-    return session.agent;
+    return session.agent
   }
-  const source = session?.source ?? '';
-  const after = source.includes(':') ? source.slice(source.indexOf(':') + 1) : '';
+  const source = session?.source ?? ""
+  const after = source.includes(":") ? source.slice(source.indexOf(":") + 1) : ""
   if (after.length > 0) {
-    return after;
+    return after
   }
-  return pane.agent ?? '';
+  return pane.agent ?? ""
 }
 
 /**
  * What the client knows about the agent of a kind.
  */
 export function agentSpec(kind: string): AgentSpec | null {
-  return SPECS.find(spec => spec.kind === kind) ?? null;
+  return SPECS.find((spec) => spec.kind === kind) ?? null
 }
 
 /**
  * The name the reader sees for an agent.
  */
 export function agentLabel(kind: string): string {
-  return agentSpec(kind)?.label ?? kind;
+  return agentSpec(kind)?.label ?? kind
 }
 
 /**
@@ -112,25 +112,25 @@ export function agentLabel(kind: string): string {
  * another kind of session than the one herdr reported.
  */
 export function resumeArgs(pane: PaneRecord): string[] | null {
-  const session: AgentSessionRef | null = pane.agent_session;
+  const session: AgentSessionRef | null = pane.agent_session
   if (session === null || session.value.length === 0) {
-    return null;
+    return null
   }
-  const spec = agentSpec(agentKind(pane));
+  const spec = agentSpec(agentKind(pane))
   if (spec === null) {
-    return null;
+    return null
   }
   if (!spec.sessionKinds.includes(session.kind as SessionKind)) {
-    return null;
+    return null
   }
-  return spec.resumeArgs(session.value);
+  return spec.resumeArgs(session.value)
 }
 
 /**
  * The prompt that makes a resumed agent carry on.
  */
 export function continuePrompt(pane: PaneRecord): string {
-  return agentSpec(agentKind(pane))?.continuePrompt ?? '继续';
+  return agentSpec(agentKind(pane))?.continuePrompt ?? "继续"
 }
 
 /**
@@ -141,15 +141,18 @@ export function continuePrompt(pane: PaneRecord): string {
  * the same when the agent restarts.
  */
 export function agentName(pane: PaneRecord): string {
-  const kind = slug(agentKind(pane)) || 'agent';
-  const paneSlug = slug(pane.pane_id);
-  const name = paneSlug.length > 0 ? kind + '-' + paneSlug : kind;
-  return name.slice(0, 32);
+  const kind = slug(agentKind(pane)) || "agent"
+  const paneSlug = slug(pane.pane_id)
+  const name = paneSlug.length > 0 ? `${kind}-${paneSlug}` : kind
+  return name.slice(0, 32)
 }
 
 /**
  * A name herdr accepts: lower case, with dashes between the parts.
  */
 function slug(value: string): string {
-  return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
 }

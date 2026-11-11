@@ -4,133 +4,155 @@
 <link rel="stylesheet" href="/vendor/nerd-fonts/symbols.css">
 <link rel="stylesheet" href="/vendor/nerd-fonts/terminal-symbols/symbols.css">
 <style>
-  body { background: #282c35; color: #dadee3; font: 16px system-ui; margin: 24px; }
-  #host { width: 600px; height: 120px; overflow: auto; }
-  #result { white-space: pre-wrap; line-height: 1.6; }
+body {
+  background: #282c35;
+  color: #dadee3;
+  font: 16px system-ui;
+  margin: 24px;
+}
+#host {
+  width: 600px;
+  height: 120px;
+  overflow: auto;
+}
+#result {
+  white-space: pre-wrap;
+  line-height: 1.6;
+}
 </style>
 <h1>Icon font browser checks</h1>
 <div id="host"><canvas id="terminal"></canvas></div>
 <pre id="result">Running…</pre>
 <script type="module">
-import { TerminalView } from '/dist/terminal.js';
-import { iconFontChunks } from '/dist/icon-font-ranges.js';
-const result = document.querySelector('#result');
-const lines = [];
+import { iconFontChunks } from "/dist/icon-font-ranges.js"
+import { TerminalView } from "/dist/terminal.js"
+
+const result = document.querySelector("#result")
+const lines = []
 function check(value, message) {
-  if (!value) throw new Error(message);
-  lines.push('PASS ' + message);
-  result.textContent = lines.join('\n');
+  if (!value) throw new Error(message)
+  lines.push(`PASS ${message}`)
+  result.textContent = lines.join("\n")
 }
-const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
+const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 async function until(predicate) {
-  const deadline = Date.now() + 15000;
+  const deadline = Date.now() + 15000
   while (!predicate()) {
-    if (Date.now() > deadline) throw new Error('Timed out waiting for font repaint');
-    await pause(50);
+    if (Date.now() > deadline) throw new Error("Timed out waiting for font repaint")
+    await pause(50)
   }
 }
 function requests() {
-  return performance.getEntriesByType('resource').filter(entry => entry.name.endsWith('.woff2'));
+  return performance.getEntriesByType("resource").filter((entry) => entry.name.endsWith(".woff2"))
 }
 try {
-  const canvas = document.querySelector('#terminal');
-  const terminal = new TerminalView(canvas);
-  const render = terminal.render.bind(terminal);
-  let paints = 0;
-  terminal.render = () => { paints += 1; render(); };
-  await terminal.setContent('ASCII and 中文', 10);
-  await pause(100);
-  check(requests().length === 0, 'Plain text downloads no icon font');
+  const canvas = document.querySelector("#terminal")
+  const terminal = new TerminalView(canvas)
+  const render = terminal.render.bind(terminal)
+  let paints = 0
+  terminal.render = () => {
+    paints += 1
+    render()
+  }
+  await terminal.setContent("ASCII and 中文", 10)
+  await pause(100)
+  check(requests().length === 0, "Plain text downloads no icon font")
 
   async function showIcon(text, expectedFile, retries = 1) {
-    const start = paints;
-    await terminal.setContent(text, 10);
-    const before = canvas.toDataURL();
-    const width = canvas.style.width;
-    const height = canvas.style.height;
-    const initialPaints = paints;
-    await until(() => paints > initialPaints && before !== canvas.toDataURL());
-    check(paints > start + 1, expectedFile + ': loaded without new output and repainted');
-    check(before !== canvas.toDataURL(), expectedFile + ': Canvas pixels changed after font load');
-    check(width === canvas.style.width && height === canvas.style.height, expectedFile + ': layout dimensions stayed fixed');
-    const fetched = requests().filter(entry => entry.name.endsWith(expectedFile));
-    check(fetched.length === retries, expectedFile + ': expected network request count ' + retries);
+    const start = paints
+    await terminal.setContent(text, 10)
+    const before = canvas.toDataURL()
+    const width = canvas.style.width
+    const height = canvas.style.height
+    const initialPaints = paints
+    await until(() => paints > initialPaints && before !== canvas.toDataURL())
+    check(paints > start + 1, `${expectedFile}: loaded without new output and repainted`)
+    check(before !== canvas.toDataURL(), `${expectedFile}: Canvas pixels changed after font load`)
+    check(
+      width === canvas.style.width && height === canvas.style.height,
+      `${expectedFile}: layout dimensions stayed fixed`,
+    )
+    const fetched = requests().filter((entry) => entry.name.endsWith(expectedFile))
+    check(fetched.length === retries, `${expectedFile}: expected network request count ${retries}`)
   }
 
-  await showIcon('A \ue0a0 中文 Z', 'symbols-0e0.woff2');
-  check(requests().length === 1, 'First icon downloads only its own Unicode page');
-  await showIcon('A \u{f0766} 中文 Z', 'symbols-f07.woff2');
-  check(requests().length === 2, 'A later supplementary-plane icon downloads only its new page');
-  await showIcon('A \u{f1af0} 中文 Z', 'symbols-f1a.woff2', 2);
-  check(requests().length === 4, 'A real HTTP 503 recovers automatically on the unchanged screen');
+  await showIcon("A \ue0a0 中文 Z", "symbols-0e0.woff2")
+  check(requests().length === 1, "First icon downloads only its own Unicode page")
+  await showIcon("A \u{f0766} 中文 Z", "symbols-f07.woff2")
+  check(requests().length === 2, "A later supplementary-plane icon downloads only its new page")
+  await showIcon("A \u{f1af0} 中文 Z", "symbols-f1a.woff2", 2)
+  check(requests().length === 4, "A real HTTP 503 recovers automatically on the unchanged screen")
 
   // Force the bundled fallback so host OS symbol coverage cannot hide the bug.
-  terminal.fontFamily = '"Symbols Nerd Font Mono", monospace';
-  await showIcon('⏵⏵ bypass permissions on', 'playback.woff2');
-  const playback = new FontFace('Playback Reference', 'url(/vendor/nerd-fonts/terminal-symbols/playback.woff2)');
-  document.fonts.add(await playback.load());
-  const reference = document.createElement('canvas');
-  reference.width = canvas.width;
-  reference.height = canvas.height;
-  const referenceContext = reference.getContext('2d');
-  const ratio = devicePixelRatio || 1;
-  referenceContext.scale(ratio, ratio);
-  referenceContext.fillStyle = '#282c35';
-  referenceContext.fillRect(0, 0, reference.width / ratio, reference.height / ratio);
-  referenceContext.font = '14px "Playback Reference"';
-  referenceContext.fillStyle = '#dadee3';
-  const columnWidth = terminal.cellWidth;
-  referenceContext.fillText('⏵', 19, 14);
-  referenceContext.fillText('⏵', 19 + columnWidth, 14);
-  const region = [Math.floor(19 * ratio), 0, Math.floor(2 * columnWidth * ratio), Math.floor(19 * ratio)];
-  const actualPixels = canvas.getContext('2d').getImageData(...region).data;
-  const referencePixels = referenceContext.getImageData(...region).data;
-  check(actualPixels.every((value, index) => value === referencePixels[index]), 'Real permission-line symbols match the bundled glyph pixels without OS symbol fallback');
+  terminal.fontFamily = '"Symbols Nerd Font Mono", monospace'
+  await showIcon("⏵⏵ bypass permissions on", "playback.woff2")
+  const playback = new FontFace("Playback Reference", "url(/vendor/nerd-fonts/terminal-symbols/playback.woff2)")
+  document.fonts.add(await playback.load())
+  const reference = document.createElement("canvas")
+  reference.width = canvas.width
+  reference.height = canvas.height
+  const referenceContext = reference.getContext("2d")
+  const ratio = devicePixelRatio || 1
+  referenceContext.scale(ratio, ratio)
+  referenceContext.fillStyle = "#282c35"
+  referenceContext.fillRect(0, 0, reference.width / ratio, reference.height / ratio)
+  referenceContext.font = '14px "Playback Reference"'
+  referenceContext.fillStyle = "#dadee3"
+  const columnWidth = terminal.cellWidth
+  referenceContext.fillText("⏵", 19, 14)
+  referenceContext.fillText("⏵", 19 + columnWidth, 14)
+  const region = [Math.floor(19 * ratio), 0, Math.floor(2 * columnWidth * ratio), Math.floor(19 * ratio)]
+  const actualPixels = canvas.getContext("2d").getImageData(...region).data
+  const referencePixels = referenceContext.getImageData(...region).data
+  check(
+    actualPixels.every((value, index) => value === referencePixels[index]),
+    "Real permission-line symbols match the bundled glyph pixels without OS symbol fallback",
+  )
 
-  const original = new FontFace('Original Icons', 'url(/vendor/nerd-fonts/symbols-nerd-font-mono.woff2)');
-  document.fonts.add(await original.load());
-  const sample = document.createElement('canvas');
-  sample.width = 48;
-  sample.height = 48;
-  const ctx = sample.getContext('2d', { willReadFrequently: true });
+  const original = new FontFace("Original Icons", "url(/vendor/nerd-fonts/symbols-nerd-font-mono.woff2)")
+  document.fonts.add(await original.load())
+  const sample = document.createElement("canvas")
+  sample.width = 48
+  sample.height = 48
+  const ctx = sample.getContext("2d", { willReadFrequently: true })
   function pixels(font, text) {
-    ctx.clearRect(0, 0, 48, 48);
-    ctx.font = '24px "' + font + '"';
-    ctx.fillText(text, 4, 32);
-    return ctx.getImageData(0, 0, 48, 48).data;
+    ctx.clearRect(0, 0, 48, 48)
+    ctx.font = `24px "${font}"`
+    ctx.fillText(text, 4, 32)
+    return ctx.getImageData(0, 0, 48, 48).data
   }
-  let widths = 0;
-  let bitmaps = 0;
+  let widths = 0
+  let bitmaps = 0
   for (const [index, chunk] of iconFontChunks.entries()) {
-    const family = 'Subset ' + index;
-    const face = new FontFace(family, 'url(/vendor/nerd-fonts/' + chunk.file + ')');
-    document.fonts.add(await face.load());
+    const family = `Subset ${index}`
+    const face = new FontFace(family, `url(/vendor/nerd-fonts/${chunk.file})`)
+    document.fonts.add(await face.load())
     for (const [start, end] of chunk.ranges) {
       for (let point = start; point <= end; point += 1) {
-        const text = String.fromCodePoint(point);
-        ctx.font = '14px "Original Icons"';
-        const expected = ctx.measureText(text).width;
-        ctx.font = '14px "' + family + '"';
-        if (ctx.measureText(text).width !== expected) throw new Error('Width changed: U+' + point.toString(16));
-        widths += 1;
+        const text = String.fromCodePoint(point)
+        ctx.font = '14px "Original Icons"'
+        const expected = ctx.measureText(text).width
+        ctx.font = `14px "${family}"`
+        if (ctx.measureText(text).width !== expected) throw new Error(`Width changed: U+${point.toString(16)}`)
+        widths += 1
       }
     }
-    const points = new Set([chunk.ranges[0][0], chunk.ranges.at(-1)[1]]);
-    if (chunk.file === 'symbols-f07.woff2') points.add(0xf0766);
+    const points = new Set([chunk.ranges[0][0], chunk.ranges.at(-1)[1]])
+    if (chunk.file === "symbols-f07.woff2") points.add(0xf0766)
     for (const point of points) {
-      const text = String.fromCodePoint(point);
-      const a = pixels('Original Icons', text);
-      const b = pixels(family, text);
-      if (!a.every((value, i) => value === b[i])) throw new Error('Pixels changed: U+' + point.toString(16));
-      bitmaps += 1;
+      const text = String.fromCodePoint(point)
+      const a = pixels("Original Icons", text)
+      const b = pixels(family, text)
+      if (!a.every((value, i) => value === b[i])) throw new Error(`Pixels changed: U+${point.toString(16)}`)
+      bitmaps += 1
     }
   }
-  check(widths === 10397, 'All 10,397 browser advance widths match the original');
-  check(bitmaps >= 99, bitmaps + ' glyph bitmap comparisons match across all 50 pages');
-  result.textContent += '\n\nALL CHECKS PASSED';
-  document.title = 'PASS — Icon font browser checks';
+  check(widths === 10397, "All 10,397 browser advance widths match the original")
+  check(bitmaps >= 99, `${bitmaps} glyph bitmap comparisons match across all 50 pages`)
+  result.textContent += "\n\nALL CHECKS PASSED"
+  document.title = "PASS — Icon font browser checks"
 } catch (error) {
-  result.textContent += '\n\nFAIL ' + error.message;
-  document.title = 'FAIL — Icon font browser checks';
+  result.textContent += `\n\nFAIL ${error.message}`
+  document.title = "FAIL — Icon font browser checks"
 }
 </script>

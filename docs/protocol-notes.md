@@ -20,31 +20,31 @@
 
 Node agent 将以下接口映射为 herdr 请求。未列出的路径返回错误。
 
-| 方法 | 路径 | 参数或行为 |
-| --- | --- | --- |
-| GET | `/api/state` | 会话快照与连接状态 |
-| GET | `/api/pane/read` | `pane`、`source`、`format`、`lines` |
-| POST | `/api/pane/text` | `pane.send_text {pane_id, text}` |
-| POST | `/api/pane/keys` | `pane.send_keys {pane_id, keys}` |
-| POST | `/api/pane/focus` | `pane.focus {pane_id}` |
-| POST | `/api/agent/start` | `agent.start {pane_id, name, kind, args}` |
-| POST | `/api/agent/prompt` | `agent.prompt {target, text}` |
-| POST | `/api/workspace/create` | `workspace.create {cwd, label, focus}` |
-| POST | `/api/tab/create` | `tab.create {workspace_id, cwd, label, focus}` |
-| POST | `/api/workspace/move` | `workspace.move {workspace_id, insert_index}` |
-| POST | `/api/tab/move` | `tab.move {tab_id, insert_index}` |
-| POST | `/api/workspace/focus` | `workspace.focus {workspace_id}` |
-| POST | `/api/tab/focus` | `tab.focus {tab_id}` |
-| WS | `/api/events` | `state`、`pane_output` 事件 |
-| GET | `/api/relay/status` | relay 状态与配对链接 |
-| POST | `/api/relay/connect` | `relayUrl`、可选 `relayKey` |
-| POST | `/api/relay/disconnect` | 断开注册连接 |
-| POST | `/api/relay/rotate` | 更换连接码 |
-| GET | `/api/relay/pairing` | 配对载荷，仅回环地址可用 |
-| GET | `/api/relay/pairing.svg` | 二维码，可选 `target=lan`，仅回环地址可用 |
-| GET | `/api/auth` | 是否需要登录 |
-| POST | `/api/login` | `password`，登录成功后设置会话 cookie |
-| POST | `/api/logout` | 作废会话并清除 cookie |
+| 方法 | 路径                     | 参数或行为                                     |
+| ---- | ------------------------ | ---------------------------------------------- |
+| GET  | `/api/state`             | 会话快照与连接状态                             |
+| GET  | `/api/pane/read`         | `pane`、`source`、`format`、`lines`            |
+| POST | `/api/pane/text`         | `pane.send_text {pane_id, text}`               |
+| POST | `/api/pane/keys`         | `pane.send_keys {pane_id, keys}`               |
+| POST | `/api/pane/focus`        | `pane.focus {pane_id}`                         |
+| POST | `/api/agent/start`       | `agent.start {pane_id, name, kind, args}`      |
+| POST | `/api/agent/prompt`      | `agent.prompt {target, text}`                  |
+| POST | `/api/workspace/create`  | `workspace.create {cwd, label, focus}`         |
+| POST | `/api/tab/create`        | `tab.create {workspace_id, cwd, label, focus}` |
+| POST | `/api/workspace/move`    | `workspace.move {workspace_id, insert_index}`  |
+| POST | `/api/tab/move`          | `tab.move {tab_id, insert_index}`              |
+| POST | `/api/workspace/focus`   | `workspace.focus {workspace_id}`               |
+| POST | `/api/tab/focus`         | `tab.focus {tab_id}`                           |
+| WS   | `/api/events`            | `state`、`pane_output` 事件                    |
+| GET  | `/api/relay/status`      | relay 状态与配对链接                           |
+| POST | `/api/relay/connect`     | `relayUrl`、可选 `relayKey`                    |
+| POST | `/api/relay/disconnect`  | 断开注册连接                                   |
+| POST | `/api/relay/rotate`      | 更换连接码                                     |
+| GET  | `/api/relay/pairing`     | 配对载荷，仅回环地址可用                       |
+| GET  | `/api/relay/pairing.svg` | 二维码，可选 `target=lan`，仅回环地址可用      |
+| GET  | `/api/auth`              | 是否需要登录                                   |
+| POST | `/api/login`             | `password`，登录成功后设置会话 cookie          |
+| POST | `/api/logout`            | 作废会话并清除 cookie                          |
 
 设置口令后，常规 API 与事件 WebSocket 要求有效会话，`/api/auth`、`/api/login` 和静态资源除外。二维码 SVG 单独限制请求来源为回环地址。relay 状态接口包含配对链接，也应按凭据处理。
 
@@ -54,27 +54,27 @@ Node agent 将以下接口映射为 herdr 请求。未列出的路径返回错�
 
 `agent.start` 返回 `launch_pending`，不代表 agent 已就绪。续跑后发送 `agent.prompt` 时，仅对未就绪错误重试。`agent_session` 的 `kind` 区分会话 ID 与路径，续跑参数由 `web/src/agents.ts` 维护。
 
-| agent | 会话类型 | 续跑参数 |
-| --- | --- | --- |
-| claude | id | `--resume <id>` |
-| codex | id | `resume <id>` |
-| pi | id / path | `--session <value>` |
-| opencode | id | `--session <id>` |
-| omp | id / path | `--resume=<value>` |
+| agent    | 会话类型  | 续跑参数            |
+| -------- | --------- | ------------------- |
+| claude   | id        | `--resume <id>`     |
+| codex    | id        | `resume <id>`       |
+| pi       | id / path | `--session <value>` |
+| opencode | id        | `--session <id>`    |
+| omp      | id / path | `--resume=<value>`  |
 
 ## relay 外层协议
 
 relay 负责路由桌面端与浏览器之间的 HTTP 和 WebSocket 流量。协议来源：[alma-relay](https://github.com/yetone/alma-relay/blob/main/docs/PROTOCOL.md)。本项目桌面端使用 protocol 1 的 JSON 帧。
 
-| 方向 | 帧 | 用途 |
-| --- | --- | --- |
-| agent → relay | `register {tokenHash, name, ver, key?, proto}` | 注册桌面端 |
-| relay → agent | `registered` / `error` | 注册结果 |
-| relay → agent | `hreq {id, method, path, headers, b?}` | HTTP 请求 |
-| agent → relay | `hres`、`hchunk`、`hend` | HTTP 响应 |
-| relay → agent | `wopen {id, path}` | 建立 WebSocket 桥 |
-| agent → relay | `wopened` / `werr` | 桥建立结果 |
-| 双向 | `wmsg {id, s? , b?}` / `wclose` | 转发消息与关闭 |
+| 方向          | 帧                                             | 用途              |
+| ------------- | ---------------------------------------------- | ----------------- |
+| agent → relay | `register {tokenHash, name, ver, key?, proto}` | 注册桌面端        |
+| relay → agent | `registered` / `error`                         | 注册结果          |
+| relay → agent | `hreq {id, method, path, headers, b?}`         | HTTP 请求         |
+| agent → relay | `hres`、`hchunk`、`hend`                       | HTTP 响应         |
+| relay → agent | `wopen {id, path}`                             | 建立 WebSocket 桥 |
+| agent → relay | `wopened` / `werr`                             | 桥建立结果        |
+| 双向          | `wmsg {id, s? , b?}` / `wclose`                | 转发消息与关闭    |
 
 桌面端通过 `/agent?th=<tokenHash>` 注册，客户端使用 `/c/<token>/…` 访问。桌面端必须先回复 `wopened`，relay 才会投递此前缓存的客户端帧。
 

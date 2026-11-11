@@ -20,6 +20,12 @@
     "deploy:worker": "wrangler deploy",
     "start": "node agent/dist/index.js",
     "mock": "node mock/dist/herdr-mock.js",
+    "format": "biome format --config-path=. --write .",
+    "format:check": "biome format --config-path=. .",
+    "lint": "biome lint --config-path=. --error-on-warnings .",
+    "check": "biome check --config-path=. --error-on-warnings .",
+    "check:fix": "biome check --config-path=. --write .",
+    "typecheck": "tsc -p tsconfig.agent.json --noEmit && tsc -p web/tsconfig.json --noEmit && tsc -p tsconfig.mock.json --noEmit",
     "test": "node --test tests/*.test.js",
     "privacy-check": "node scripts/privacy-check.mjs"
   },
@@ -32,6 +38,7 @@
     "ws": "^8.18.0"
   },
   "devDependencies": {
+    "@biomejs/biome": "2.6.7",
     "@types/node": "^22.10.0",
     "@types/qrcode": "^1.5.6",
     "@types/ws": "^8.5.13",

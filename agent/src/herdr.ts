@@ -1,35 +1,35 @@
-import { connect, type Socket } from 'node:net';
+import { connect, type Socket } from "node:net"
 
 /** A request as herdr expects it on the socket. */
 export interface HerdrRequest {
-  id: string;
-  method: string;
-  params: Record<string, unknown>;
+  id: string
+  method: string
+  params: Record<string, unknown>
 }
 
 /** The error object herdr returns for a failed request. */
 export interface HerdrErrorBody {
-  code: string;
-  message: string;
+  code: string
+  message: string
 }
 
 /** One entry of the events.subscribe payload. */
 export interface HerdrSubscription {
-  type: string;
-  pane_id?: string;
+  type: string
+  pane_id?: string
 }
 
 export class HerdrRequestError extends Error {
-  readonly code: string;
+  readonly code: string
 
   constructor(code: string, message: string) {
-    super(message);
-    this.name = 'HerdrRequestError';
-    this.code = code;
+    super(message)
+    this.name = "HerdrRequestError"
+    this.code = code
   }
 }
 
-export type HerdrEventHandler = (type: string, data: Record<string, unknown>) => void;
+export type HerdrEventHandler = (type: string, data: Record<string, unknown>) => void
 
 /**
  * Client for the herdr control socket.
@@ -43,20 +43,20 @@ export type HerdrEventHandler = (type: string, data: Record<string, unknown>) =>
  *   carries the event stream.
  */
 export class HerdrClient {
-  private readonly socketPath: string;
-  private sequence = 0;
-  private eventSocket: Socket | null = null;
-  private subscriptionKey = '';
-  private readonly handlers: HerdrEventHandler[] = [];
-  private reconnectTimer: NodeJS.Timeout | null = null;
-  private closed = false;
+  private readonly socketPath: string
+  private sequence = 0
+  private eventSocket: Socket | null = null
+  private subscriptionKey = ""
+  private readonly handlers: HerdrEventHandler[] = []
+  private reconnectTimer: NodeJS.Timeout | null = null
+  private closed = false
 
   constructor(socketPath: string) {
-    this.socketPath = socketPath;
+    this.socketPath = socketPath
   }
 
   onEvent(handler: HerdrEventHandler): void {
-    this.handlers.push(handler);
+    this.handlers.push(handler)
   }
 
   /**
@@ -66,12 +66,12 @@ export class HerdrClient {
    * herdr has no way to amend a live subscription.
    */
   subscribe(subscriptions: HerdrSubscription[]): void {
-    const key = subscriptions.map(entry => entry.type + ':' + (entry.pane_id ?? '')).join(',');
+    const key = subscriptions.map((entry) => `${entry.type}:${entry.pane_id ?? ""}`).join(",")
     if (key === this.subscriptionKey && this.eventSocket !== null) {
-      return;
+      return
     }
-    this.subscriptionKey = key;
-    this.openEventConnection(subscriptions);
+    this.subscriptionKey = key
+    this.openEventConnection(subscriptions)
   }
 
   /**
@@ -80,144 +80,144 @@ export class HerdrClient {
    */
   request(method: string, params: Record<string, unknown> = {}): Promise<Record<string, unknown>> {
     return new Promise((resolve, reject) => {
-      const socket = connect(this.socketPath);
-      let buffer = '';
-      let settled = false;
-      const id = 'r' + (++this.sequence);
+      const socket = connect(this.socketPath)
+      let buffer = ""
+      let settled = false
+      const id = `r${++this.sequence}`
 
       const finish = (error: Error | null, result?: Record<string, unknown>): void => {
         if (settled) {
-          return;
+          return
         }
-        settled = true;
-        socket.end();
+        settled = true
+        socket.end()
         if (error !== null) {
-          reject(error);
-          return;
+          reject(error)
+          return
         }
-        resolve(result ?? {});
-      };
+        resolve(result ?? {})
+      }
 
-      socket.setEncoding('utf8');
-      socket.on('connect', () => {
-        const payload: HerdrRequest = { id, method, params };
-        socket.write(JSON.stringify(payload) + '\n', 'utf8');
-      });
-      socket.on('data', (chunk: string) => {
-        buffer += chunk;
-        let index = buffer.indexOf('\n');
+      socket.setEncoding("utf8")
+      socket.on("connect", () => {
+        const payload: HerdrRequest = { id, method, params }
+        socket.write(`${JSON.stringify(payload)}\n`, "utf8")
+      })
+      socket.on("data", (chunk: string) => {
+        buffer += chunk
+        let index = buffer.indexOf("\n")
         while (index >= 0) {
-          const line = buffer.substring(0, index).trim();
-          buffer = buffer.substring(index + 1);
+          const line = buffer.substring(0, index).trim()
+          buffer = buffer.substring(index + 1)
           if (line.length > 0) {
-            const message = this.parseLine(line);
-            if (message !== null && message['id'] === id) {
-              const error = message['error'];
+            const message = this.parseLine(line)
+            if (message !== null && message.id === id) {
+              const error = message.error
               if (error !== undefined && error !== null) {
-                const body = error as Partial<HerdrErrorBody>;
-                finish(new HerdrRequestError(body.code ?? 'unknown', body.message ?? 'herdr request failed'));
-                return;
+                const body = error as Partial<HerdrErrorBody>
+                finish(new HerdrRequestError(body.code ?? "unknown", body.message ?? "herdr request failed"))
+                return
               }
-              finish(null, (message['result'] ?? {}) as Record<string, unknown>);
-              return;
+              finish(null, (message.result ?? {}) as Record<string, unknown>)
+              return
             }
           }
-          index = buffer.indexOf('\n');
+          index = buffer.indexOf("\n")
         }
-      });
-      socket.on('error', (error: Error) => finish(error));
-      socket.on('close', () => finish(new Error('herdr socket closed before answering')));
-    });
+      })
+      socket.on("error", (error: Error) => finish(error))
+      socket.on("close", () => finish(new Error("herdr socket closed before answering")))
+    })
   }
 
   close(): void {
-    this.closed = true;
+    this.closed = true
     if (this.reconnectTimer !== null) {
-      clearTimeout(this.reconnectTimer);
-      this.reconnectTimer = null;
+      clearTimeout(this.reconnectTimer)
+      this.reconnectTimer = null
     }
-    this.eventSocket?.destroy();
-    this.eventSocket = null;
+    this.eventSocket?.destroy()
+    this.eventSocket = null
   }
 
   private openEventConnection(subscriptions: HerdrSubscription[]): void {
-    this.eventSocket?.destroy();
-    this.eventSocket = null;
+    this.eventSocket?.destroy()
+    this.eventSocket = null
     if (this.closed) {
-      return;
+      return
     }
-    const socket = connect(this.socketPath);
-    this.eventSocket = socket;
-    let buffer = '';
+    const socket = connect(this.socketPath)
+    this.eventSocket = socket
+    let buffer = ""
 
-    socket.setEncoding('utf8');
-    socket.on('connect', () => {
+    socket.setEncoding("utf8")
+    socket.on("connect", () => {
       const payload: HerdrRequest = {
-        id: 'subscribe',
-        method: 'events.subscribe',
-        params: { subscriptions }
-      };
-      socket.write(JSON.stringify(payload) + '\n', 'utf8');
-    });
-    socket.on('data', (chunk: string) => {
-      buffer += chunk;
-      let index = buffer.indexOf('\n');
+        id: "subscribe",
+        method: "events.subscribe",
+        params: { subscriptions },
+      }
+      socket.write(`${JSON.stringify(payload)}\n`, "utf8")
+    })
+    socket.on("data", (chunk: string) => {
+      buffer += chunk
+      let index = buffer.indexOf("\n")
       while (index >= 0) {
-        const line = buffer.substring(0, index).trim();
-        buffer = buffer.substring(index + 1);
+        const line = buffer.substring(0, index).trim()
+        buffer = buffer.substring(index + 1)
         if (line.length > 0) {
-          const message = this.parseLine(line);
-          if (message !== null && message['id'] === 'subscribe' && message['error'] === undefined) {
+          const message = this.parseLine(line)
+          if (message !== null && message.id === "subscribe" && message.error === undefined) {
             for (const handler of this.handlers) {
-              handler('__connected', {});
+              handler("__connected", {})
             }
           }
-          this.dispatch(line);
+          this.dispatch(line)
         }
-        index = buffer.indexOf('\n');
+        index = buffer.indexOf("\n")
       }
-    });
-    socket.on('error', () => {
-      this.scheduleReconnect(subscriptions);
-    });
-    socket.on('close', () => {
+    })
+    socket.on("error", () => {
+      this.scheduleReconnect(subscriptions)
+    })
+    socket.on("close", () => {
       if (this.eventSocket === socket) {
-        this.eventSocket = null;
+        this.eventSocket = null
       }
-      this.scheduleReconnect(subscriptions);
-    });
+      this.scheduleReconnect(subscriptions)
+    })
   }
 
   private scheduleReconnect(subscriptions: HerdrSubscription[]): void {
     if (this.closed || this.reconnectTimer !== null) {
-      return;
+      return
     }
     this.reconnectTimer = setTimeout(() => {
-      this.reconnectTimer = null;
-      this.openEventConnection(subscriptions);
-    }, 1000);
+      this.reconnectTimer = null
+      this.openEventConnection(subscriptions)
+    }, 1000)
   }
 
   private dispatch(line: string): void {
-    const message = this.parseLine(line);
+    const message = this.parseLine(line)
     if (message === null) {
-      return;
+      return
     }
-    const event = message['event'];
-    if (typeof event !== 'string') {
-      return;
+    const event = message.event
+    if (typeof event !== "string") {
+      return
     }
-    const data = (message['data'] ?? {}) as Record<string, unknown>;
+    const data = (message.data ?? {}) as Record<string, unknown>
     for (const handler of this.handlers) {
-      handler(event, data);
+      handler(event, data)
     }
   }
 
   parseLine(line: string): Record<string, unknown> | null {
     try {
-      return JSON.parse(line) as Record<string, unknown>;
+      return JSON.parse(line) as Record<string, unknown>
     } catch {
-      return null;
+      return null
     }
   }
 }

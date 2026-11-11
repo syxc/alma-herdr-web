@@ -1,4 +1,4 @@
-import { randomBytes, timingSafeEqual } from 'node:crypto';
+import { randomBytes, timingSafeEqual } from "node:crypto"
 
 /**
  * The passphrase that guards the web client.
@@ -7,118 +7,118 @@ import { randomBytes, timingSafeEqual } from 'node:crypto';
  * who knows the address. A server without a passphrase stays open, which
  * keeps the local use on a laptop the way it was.
  */
-export const SESSION_COOKIE = 'alma_session';
+export const SESSION_COOKIE = "alma_session"
 
 /** How long a session stays valid. */
-const SESSION_LIFETIME_MS = 30 * 24 * 60 * 60 * 1000;
+const SESSION_LIFETIME_MS = 30 * 24 * 60 * 60 * 1000
 
 export interface SignInResult {
-  ok: boolean;
-  token?: string;
-  error?: string;
+  ok: boolean
+  token?: string
+  error?: string
 }
 
 export interface Authenticator {
   /** Whether the server asks for a passphrase at all. */
-  readonly required: boolean;
+  readonly required: boolean
   /** Checks a passphrase and hands out a session. */
-  signIn(password: string): SignInResult;
+  signIn(password: string): SignInResult
   /** Whether a request carries a session that the server knows. */
-  verify(headers: { cookie?: string; authorization?: string }): boolean;
+  verify(headers: { cookie?: string; authorization?: string }): boolean
   /** Ends the session of a request. */
-  signOut(headers: { cookie?: string; authorization?: string }): void;
+  signOut(headers: { cookie?: string; authorization?: string }): void
 }
 
 /**
  * Compares two strings without telling how far they differ.
  */
 function sameSecret(left: string, right: string): boolean {
-  const a = Buffer.from(left, 'utf8');
-  const b = Buffer.from(right, 'utf8');
+  const a = Buffer.from(left, "utf8")
+  const b = Buffer.from(right, "utf8")
   if (a.length !== b.length) {
-    return false;
+    return false
   }
-  return timingSafeEqual(a, b);
+  return timingSafeEqual(a, b)
 }
 
 /**
  * Builds the authenticator of a server.
  */
 export function createAuth(password: string): Authenticator {
-  const required = password.length > 0;
-  const sessions = new Map<string, number>();
+  const required = password.length > 0
+  const sessions = new Map<string, number>()
 
   const signIn = (candidate: string): SignInResult => {
     if (!required) {
-      return { ok: true };
+      return { ok: true }
     }
     if (!sameSecret(candidate, password)) {
-      return { ok: false, error: 'that passphrase does not open this server' };
+      return { ok: false, error: "that passphrase does not open this server" }
     }
-    const token = randomBytes(24).toString('base64url');
-    sessions.set(token, Date.now() + SESSION_LIFETIME_MS);
-    return { ok: true, token };
-  };
+    const token = randomBytes(24).toString("base64url")
+    sessions.set(token, Date.now() + SESSION_LIFETIME_MS)
+    return { ok: true, token }
+  }
 
   const known = (token: string): boolean => {
-    const until = sessions.get(token);
+    const until = sessions.get(token)
     if (until === undefined) {
-      return false;
+      return false
     }
     if (until < Date.now()) {
-      sessions.delete(token);
-      return false;
+      sessions.delete(token)
+      return false
     }
-    return true;
-  };
+    return true
+  }
 
   const verify = (headers: { cookie?: string; authorization?: string }): boolean => {
     if (!required) {
-      return true;
+      return true
     }
-    const cookie = headers.cookie ?? '';
-    for (const part of cookie.split(';')) {
-      const [name, ...rest] = part.trim().split('=');
+    const cookie = headers.cookie ?? ""
+    for (const part of cookie.split(";")) {
+      const [name, ...rest] = part.trim().split("=")
       if (name === SESSION_COOKIE) {
-        const token = rest.join('=');
+        const token = rest.join("=")
         if (known(token)) {
-          return true;
+          return true
         }
       }
     }
-    const auth = headers.authorization ?? '';
-    if (auth.startsWith('Bearer ')) {
-      return known(auth.slice('Bearer '.length).trim());
+    const auth = headers.authorization ?? ""
+    if (auth.startsWith("Bearer ")) {
+      return known(auth.slice("Bearer ".length).trim())
     }
-    return false;
-  };
+    return false
+  }
 
   const tokenOf = (headers: { cookie?: string; authorization?: string }): string => {
-    const cookie = headers.cookie ?? '';
-    for (const part of cookie.split(';')) {
-      const [name, ...rest] = part.trim().split('=');
+    const cookie = headers.cookie ?? ""
+    for (const part of cookie.split(";")) {
+      const [name, ...rest] = part.trim().split("=")
       if (name === SESSION_COOKIE) {
-        return rest.join('=');
+        return rest.join("=")
       }
     }
-    const auth = headers.authorization ?? '';
-    if (auth.startsWith('Bearer ')) {
-      return auth.slice('Bearer '.length).trim();
+    const auth = headers.authorization ?? ""
+    if (auth.startsWith("Bearer ")) {
+      return auth.slice("Bearer ".length).trim()
     }
-    return '';
-  };
+    return ""
+  }
 
   const signOut = (headers: { cookie?: string; authorization?: string }): void => {
-    const token = tokenOf(headers);
+    const token = tokenOf(headers)
     if (token.length > 0) {
-      sessions.delete(token);
+      sessions.delete(token)
     }
-  };
+  }
 
   return {
     required,
     signIn,
     verify,
-    signOut
-  };
+    signOut,
+  }
 }

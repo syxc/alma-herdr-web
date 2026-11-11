@@ -9,9 +9,9 @@
 
 export interface AuthState {
   /** Whether the server asks for a passphrase. */
-  required: boolean;
+  required: boolean
   /** Why the last attempt failed. */
-  error?: string;
+  error?: string
 }
 
 /**
@@ -22,17 +22,20 @@ export interface AuthState {
  */
 export async function authStatus(): Promise<AuthState> {
   try {
-    const response = await fetch('/api/auth', { headers: { accept: 'application/json' }, signal: AbortSignal.timeout(15000) });
+    const response = await fetch("/api/auth", {
+      headers: { accept: "application/json" },
+      signal: AbortSignal.timeout(15000),
+    })
     if (response.status === 404) {
-      return { required: false };
+      return { required: false }
     }
     if (!response.ok) {
-      return { required: true, error: 'the server did not answer' };
+      return { required: true, error: "the server did not answer" }
     }
-    const body = (await response.json()) as { required?: boolean };
-    return { required: body.required === true };
+    const body = (await response.json()) as { required?: boolean }
+    return { required: body.required === true }
   } catch {
-    return { required: false };
+    return { required: false }
   }
 }
 
@@ -41,26 +44,26 @@ export async function authStatus(): Promise<AuthState> {
  */
 export async function signIn(password: string): Promise<AuthState> {
   try {
-    const response = await fetch('/api/login', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ password })
-    });
+    const response = await fetch("/api/login", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ password }),
+    })
     if (response.status === 404) {
       // The server has no passphrase, so there is nothing to sign in to.
-      return { required: false };
+      return { required: false }
     }
     const body = (await response.json().catch(() => ({}))) as {
-      ok?: boolean;
-      error?: string;
-      required?: boolean;
-    };
-    if (!response.ok || body.ok !== true) {
-      return { required: true, error: body.error ?? 'that passphrase was refused' };
+      ok?: boolean
+      error?: string
+      required?: boolean
     }
-    return { required: body.required === true };
+    if (!response.ok || body.ok !== true) {
+      return { required: true, error: body.error ?? "that passphrase was refused" }
+    }
+    return { required: body.required === true }
   } catch (error) {
-    return { required: true, error: (error as Error).message };
+    return { required: true, error: (error as Error).message }
   }
 }
 
@@ -69,7 +72,7 @@ export async function signIn(password: string): Promise<AuthState> {
  */
 export async function signOut(): Promise<void> {
   try {
-    await fetch('/api/logout', { method: 'POST' });
+    await fetch("/api/logout", { method: "POST" })
   } catch {
     // The session ends on the server or not at all, the client moves on.
   }

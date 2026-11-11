@@ -2,13 +2,13 @@
 
 浏览器依赖由 `npm run build:web` 复制到 `web/vendor/`。普通构建使用已有依赖和固定资源，不下载字体或编译终端内核。分发包携带对应许可证。
 
-| 组件 | 来源 | 许可证 | 用途 |
-| --- | --- | --- | --- |
-| Symbols Nerd Font Mono | [nerdfont-webfonts](https://mshaugh.github.io/nerdfont-webfonts/) | MIT 及所含图标集许可 | Nerd Font 图标回退 |
-| Noto Sans Symbols 2 | [noto-fonts](https://github.com/notofonts/noto-fonts) | SIL OFL 1.1 | U+23F4 至 U+23FA 播放符号 |
-| Ghostty VT | [ghostty](https://github.com/ghostty-org/ghostty) | MIT | 终端单元格与样式 |
-| jsQR | [jsQR](https://github.com/cozmo/jsQR) | Apache-2.0 | 原生扫码不可用时解码二维码 |
-| noble | [hashes](https://github.com/paulmillr/noble-hashes)、[ciphers](https://github.com/paulmillr/noble-ciphers)、[curves](https://github.com/paulmillr/noble-curves) | MIT | WebCrypto 不可用时提供 HKDF、SHA-256、AES-GCM 与 P-256 |
+| 组件                   | 来源                                                                                                                                                            | 许可证               | 用途                                                   |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------- | ------------------------------------------------------ |
+| Symbols Nerd Font Mono | [nerdfont-webfonts](https://mshaugh.github.io/nerdfont-webfonts/)                                                                                               | MIT 及所含图标集许可 | Nerd Font 图标回退                                     |
+| Noto Sans Symbols 2    | [noto-fonts](https://github.com/notofonts/noto-fonts)                                                                                                           | SIL OFL 1.1          | U+23F4 至 U+23FA 播放符号                              |
+| Ghostty VT             | [ghostty](https://github.com/ghostty-org/ghostty)                                                                                                               | MIT                  | 终端单元格与样式                                       |
+| jsQR                   | [jsQR](https://github.com/cozmo/jsQR)                                                                                                                           | Apache-2.0           | 原生扫码不可用时解码二维码                             |
+| noble                  | [hashes](https://github.com/paulmillr/noble-hashes)、[ciphers](https://github.com/paulmillr/noble-ciphers)、[curves](https://github.com/paulmillr/noble-curves) | MIT                  | WebCrypto 不可用时提供 HKDF、SHA-256、AES-GCM 与 P-256 |
 
 `scripts/copy-vendor.mjs` 只复制实际使用的 noble 模块、jsQR 和许可证。这些复制产物不入库，可通过安装依赖和构建恢复。字体与 Ghostty WASM 是仓库内的固定资源。
 

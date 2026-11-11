@@ -1,29 +1,29 @@
-import { createServer, type Server } from 'node:http';
-import type { Socket } from 'node:net';
-import { WebSocketServer, type WebSocket } from 'ws';
+import { createServer, type Server } from "node:http"
+import type { Socket } from "node:net"
+import { type WebSocket, WebSocketServer } from "ws"
 
 /** A frame on the agent socket, as the relay sends and receives them. */
 export interface RelayFrame {
-  t: string;
-  id?: string;
-  method?: string;
-  path?: string;
-  headers?: Record<string, string>;
-  b?: string;
-  s?: string;
-  status?: number;
-  message?: string;
+  t: string
+  id?: string
+  method?: string
+  path?: string
+  headers?: Record<string, string>
+  b?: string
+  s?: string
+  status?: number
+  message?: string
 }
 
 /** Phone facing paths look like /c/<code>/rest. */
-const CLIENT_PATH = /^\/c\/([A-Za-z0-9_-]{16,128})(\/.*)?$/;
+const CLIENT_PATH = /^\/c\/([A-Za-z0-9_-]{16,128})(\/.*)?$/
 
 /** One bridged phone socket and the frames still waiting to reach it. */
 interface Bridge {
-  id: string;
-  socket: WebSocket;
-  opened: boolean;
-  queue: Array<{ data: Buffer; isBinary: boolean }>;
+  id: string
+  socket: WebSocket
+  opened: boolean
+  queue: Array<{ data: Buffer; isBinary: boolean }>
 }
 
 /**
@@ -39,154 +39,152 @@ interface Bridge {
  * that forgets to open the socket fails here too.
  */
 export class RelayMock {
-  readonly received: RelayFrame[] = [];
-  private readonly server: Server;
-  private readonly agentWss: WebSocketServer;
-  private readonly phoneWss: WebSocketServer;
-  private agent: WebSocket | null = null;
-  private port = 0;
-  private counter = 0;
-  private readonly bridges = new Map<string, Bridge>();
-  private readonly connections = new Set<Socket>();
+  readonly received: RelayFrame[] = []
+  private readonly server: Server
+  private readonly agentWss: WebSocketServer
+  private readonly phoneWss: WebSocketServer
+  private agent: WebSocket | null = null
+  private port = 0
+  private counter = 0
+  private readonly bridges = new Map<string, Bridge>()
+  private readonly connections = new Set<Socket>()
 
   constructor() {
-    this.server = createServer();
-    this.agentWss = new WebSocketServer({ noServer: true });
-    this.phoneWss = new WebSocketServer({ noServer: true });
+    this.server = createServer()
+    this.agentWss = new WebSocketServer({ noServer: true })
+    this.phoneWss = new WebSocketServer({ noServer: true })
 
-    this.server.on('connection', socket => {
-      this.connections.add(socket);
-      socket.on('close', () => this.connections.delete(socket));
-    });
+    this.server.on("connection", (socket) => {
+      this.connections.add(socket)
+      socket.on("close", () => this.connections.delete(socket))
+    })
 
-    this.server.on('upgrade', (request, socket, head) => {
-      const url = request.url ?? '';
-      if (url === '/agent' || url.startsWith('/agent?')) {
-        this.agentWss.handleUpgrade(request, socket, head, ws => this.handleAgent(ws));
-        return;
+    this.server.on("upgrade", (request, socket, head) => {
+      const url = request.url ?? ""
+      if (url === "/agent" || url.startsWith("/agent?")) {
+        this.agentWss.handleUpgrade(request, socket, head, (ws) => this.handleAgent(ws))
+        return
       }
-      const parsed = CLIENT_PATH.exec(url);
+      const parsed = CLIENT_PATH.exec(url)
       if (parsed === null) {
-        socket.destroy();
-        return;
+        socket.destroy()
+        return
       }
-      const rest = parsed[2] ?? '/';
-      this.phoneWss.handleUpgrade(request, socket, head, ws => this.handlePhone(ws, rest));
-    });
+      const rest = parsed[2] ?? "/"
+      this.phoneWss.handleUpgrade(request, socket, head, (ws) => this.handlePhone(ws, rest))
+    })
   }
 
   private handleAgent(socket: WebSocket): void {
-    this.agent = socket;
-    socket.on('message', (data: Buffer) => {
-      let frame: RelayFrame;
+    this.agent = socket
+    socket.on("message", (data: Buffer) => {
+      let frame: RelayFrame
       try {
-        frame = JSON.parse(data.toString('utf8')) as RelayFrame;
+        frame = JSON.parse(data.toString("utf8")) as RelayFrame
       } catch {
-        return;
+        return
       }
-      this.received.push(frame);
-      if (frame.t === 'register') {
-        socket.send(JSON.stringify({ t: 'registered', proto: 1 }));
-        return;
+      this.received.push(frame)
+      if (frame.t === "register") {
+        socket.send(JSON.stringify({ t: "registered", proto: 1 }))
+        return
       }
-      if (frame.t === 'wopened') {
-        const bridge = this.bridges.get(String(frame.id ?? ''));
+      if (frame.t === "wopened") {
+        const bridge = this.bridges.get(String(frame.id ?? ""))
         if (bridge === undefined) {
-          return;
+          return
         }
-        bridge.opened = true;
+        bridge.opened = true
         for (const queued of bridge.queue) {
-          this.sendWs(bridge, queued.data, queued.isBinary);
+          this.sendWs(bridge, queued.data, queued.isBinary)
         }
-        bridge.queue = [];
-        return;
+        bridge.queue = []
+        return
       }
-      if (frame.t === 'werr') {
-        const bridge = this.bridges.get(String(frame.id ?? ''));
-        bridge?.socket.close(1011, 'Desktop could not open the socket');
-        this.bridges.delete(String(frame.id ?? ''));
-        return;
+      if (frame.t === "werr") {
+        const bridge = this.bridges.get(String(frame.id ?? ""))
+        bridge?.socket.close(1011, "Desktop could not open the socket")
+        this.bridges.delete(String(frame.id ?? ""))
+        return
       }
-      if (frame.t === 'wmsg' && frame.id !== undefined && frame.s !== undefined) {
-        const bridge = this.bridges.get(frame.id);
-        bridge?.socket.send(frame.s);
+      if (frame.t === "wmsg" && frame.id !== undefined && frame.s !== undefined) {
+        const bridge = this.bridges.get(frame.id)
+        bridge?.socket.send(frame.s)
       }
-    });
-    socket.on('close', () => {
-      this.agent = null;
-    });
+    })
+    socket.on("close", () => {
+      this.agent = null
+    })
   }
 
   private handlePhone(socket: WebSocket, path: string): void {
     if (this.agent === null) {
-      socket.close(502, 'no desktop');
-      return;
+      socket.close(502, "no desktop")
+      return
     }
-    const id = 'b' + (++this.counter);
-    this.bridges.set(id, { id, socket, opened: false, queue: [] });
-    this.agent.send(JSON.stringify({ t: 'wopen', id, path }));
-    socket.on('message', (data: Buffer, isBinary: boolean) => {
-      const bridge = this.bridges.get(id);
+    const id = `b${++this.counter}`
+    this.bridges.set(id, { id, socket, opened: false, queue: [] })
+    this.agent.send(JSON.stringify({ t: "wopen", id, path }))
+    socket.on("message", (data: Buffer, isBinary: boolean) => {
+      const bridge = this.bridges.get(id)
       if (bridge === undefined) {
-        return;
+        return
       }
       if (!bridge.opened) {
-        bridge.queue.push({ data, isBinary });
-        return;
+        bridge.queue.push({ data, isBinary })
+        return
       }
-      this.sendWs(bridge, data, isBinary);
-    });
-    socket.on('close', () => {
-      this.bridges.delete(id);
-      this.agent?.send(JSON.stringify({ t: 'wclose', id }));
-    });
+      this.sendWs(bridge, data, isBinary)
+    })
+    socket.on("close", () => {
+      this.bridges.delete(id)
+      this.agent?.send(JSON.stringify({ t: "wclose", id }))
+    })
   }
 
   private sendWs(bridge: Bridge, data: Buffer, isBinary: boolean): void {
-    this.agent?.send(
-      JSON.stringify({ t: 'wmsg', id: bridge.id, s: data.toString('utf8') })
-    );
-    void isBinary;
+    this.agent?.send(JSON.stringify({ t: "wmsg", id: bridge.id, s: data.toString("utf8") }))
+    void isBinary
   }
 
   async start(): Promise<void> {
-    await new Promise<void>(resolve => {
-      this.server.listen(0, '127.0.0.1', () => {
-        const address = this.server.address();
-        this.port = typeof address === 'object' && address !== null ? address.port : 0;
-        resolve();
-      });
-    });
+    await new Promise<void>((resolve) => {
+      this.server.listen(0, "127.0.0.1", () => {
+        const address = this.server.address()
+        this.port = typeof address === "object" && address !== null ? address.port : 0
+        resolve()
+      })
+    })
   }
 
   get url(): string {
-    return 'http://127.0.0.1:' + this.port;
+    return `http://127.0.0.1:${this.port}`
   }
 
   /** Sends a frame to the connected desktop. */
   push(frame: RelayFrame): void {
-    this.agent?.send(JSON.stringify(frame));
+    this.agent?.send(JSON.stringify(frame))
   }
 
   /** All frames of a kind the desktop sent. */
   framesOfKind(kind: string): RelayFrame[] {
-    return this.received.filter(frame => frame.t === kind);
+    return this.received.filter((frame) => frame.t === kind)
   }
 
   async stop(): Promise<void> {
-    this.agent?.terminate();
+    this.agent?.terminate()
     for (const bridge of this.bridges.values()) {
-      bridge.socket.terminate();
+      bridge.socket.terminate()
     }
-    this.bridges.clear();
+    this.bridges.clear()
     for (const connection of this.connections) {
-      connection.destroy();
+      connection.destroy()
     }
-    this.connections.clear();
-    this.agentWss.close();
-    this.phoneWss.close();
-    await new Promise<void>(resolve => {
-      this.server.close(() => resolve());
-    });
+    this.connections.clear()
+    this.agentWss.close()
+    this.phoneWss.close()
+    await new Promise<void>((resolve) => {
+      this.server.close(() => resolve())
+    })
   }
 }
