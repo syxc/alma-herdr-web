@@ -114,6 +114,8 @@ npm test
 npm run privacy-check
 ```
 
+GitHub Actions 在推送到 `master`、提交 Pull Request 或手动触发时运行同一套检查，使用 Ubuntu 和 Node.js 22。工作流先检查提交快照中的隐私信息，再安装锁定依赖，执行 Biome 检查、构建和测试；构建已包含 agent、Web 和 mock 的类型检查。CI 无需桌面端或部署凭据。
+
 自动测试使用模拟 herdr 与 relay，不依赖真实桌面端。浏览器检查入口：
 
 | 命令                                       | 检查内容                                                |

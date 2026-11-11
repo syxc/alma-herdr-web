@@ -1,6 +1,6 @@
 {
   "name": "alma-herdr-web",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "description": "Web client for Alma herdr: pairs with the Alma desktop over the Alma relay, or talks to the local herdr socket through its own agent.",

@@ -117,7 +117,7 @@ export class RelayAgent {
           t: "register",
           tokenHash: sha256Hex(token),
           name: "alma-herdr-web",
-          ver: "1.0.0",
+          ver: "0.1.0",
           key,
           proto: 1,
         }),

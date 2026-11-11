@@ -1,4 +1,5 @@
 import assert from "node:assert/strict"
+import { readFile } from "node:fs/promises"
 import { createServer } from "node:http"
 import { test } from "node:test"
 import { WebSocketServer } from "ws"
@@ -134,6 +135,11 @@ test("a plain websocket bridge is refused", async () => {
 test("the desktop opens the encrypted socket for the relay", async () => {
   const stack = await startStack()
   try {
+    const manifest = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"))
+    const lock = JSON.parse(await readFile(new URL("../package-lock.json", import.meta.url), "utf8"))
+    assert.equal(lock.version, manifest.version)
+    assert.equal(lock.packages[""].version, manifest.version)
+    assert.equal(stack.relay.framesOfKind("register")[0].ver, manifest.version)
     stack.relay.push({ t: "wopen", id: "w9", path: E2E_PATH })
     await waitFor(() => stack.relay.framesOfKind("wopened").length === 1, "the socket to be opened")
     assert.equal(stack.relay.framesOfKind("wopened")[0].id, "w9")
