@@ -1,0 +1,13 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "alma-herdr-web",
+  "compatibility_date": "2026-11-10",
+  "build": {
+    "command": "npm run build:worker",
+    "watch_dir": ["./web/src", "./web/index.html", "./web/style.css", "./scripts/build-worker.mjs"]
+  },
+  "assets": {
+    "directory": "./dist/worker",
+    "not_found_handling": "none"
+  }
+}

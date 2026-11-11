@@ -1,0 +1,120 @@
+### macOS
+# Finder metadata
+.DS_Store
+
+# Thumbnails
+._*
+
+# Custom folder icons
+Icon
+
+
+# Volume root files
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+
+### Windows
+# Windows thumbnail cache files
+Thumbs.db
+
+# Folder config file
+[Dd]esktop.ini
+
+# Recycle Bin used on file shares
+$RECYCLE.BIN/
+
+# Windows shortcuts
+*.lnk
+
+### Linux
+# Backup files
+*~
+
+# Temporary files from deleted open files
+.fuse_hidden*
+
+# KDE directory preferences
+.directory
+
+# Linux trash folder
+.Trash-*
+
+# NFS temporary files
+.nfs*
+
+### Node
+# Dependencies
+node_modules/
+
+# Logs
+*.log
+
+# Runtime data
+*.pid
+*.pid.lock
+
+# Coverage
+coverage/
+*.lcov
+.nyc_output
+
+# Build output
+dist/
+build/Release
+
+# Local Wrangler state and build metadata
+.wrangler/
+
+# TypeScript cache
+*.tsbuildinfo
+
+# Framework build output and caches
+.cache
+.parcel-cache
+.next
+out/
+.nuxt
+
+# dotenv environment variable files
+.env
+.env.local
+.env.*.local
+
+# npm cache directory
+.npm
+*.tgz
+
+### Secrets and local state
+# Environment files and local overrides
+.env
+.env.*
+*.local
+*.local.json
+
+# The relay identity holds the connect code of this machine
+relay.json
+
+### Images of this machine
+# A pairing code carries the routing token, which is as good as a password
+docs/*.png
+*.png
+
+### Vendored browser libraries
+# Restored by npm run build:web, see docs/third-party.md
+web/vendor/*
+# The terminal kernel is built from the Ghostty sources instead of taken from
+# a package, so it stays in the repository.
+!web/vendor/ghostty/
+# The fixed icon font ships with the client and needs no build-time download.
+!web/vendor/nerd-fonts/
+
+# yarn v2
+.yarn/cache
+.yarn/unplugged
+.yarn/install-state.gz
+.pnp.*

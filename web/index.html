@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#282c35" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23282c35'/%3E%3Cpath d='M16 7l7 9-7 9-7-9z' fill='%2362afec'/%3E%3C/svg%3E"
+    />
+    <title>Alma Herdr Web</title>
+    <link rel="stylesheet" href="vendor/nerd-fonts/symbols.css" />
+    <link rel="stylesheet" href="vendor/nerd-fonts/terminal-symbols/symbols.css" />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <!--
+      The sign in comes first: the client runs on a server of its own, so
+      nobody gets to the terminals without the passphrase.
+    -->
+    <section id="screen-login" class="screen-login">
+      <div class="login-card">
+        <span class="login-mark" aria-hidden="true">◈</span>
+        <h1 class="login-title">alma herdr</h1>
+        <p class="login-sub">The terminals of this desktop, on any device.</p>
+        <form id="login-form" class="login-form" autocomplete="off">
+          <input
+            id="login-password"
+            type="password"
+            placeholder="Passphrase"
+            autocomplete="current-password"
+            aria-label="Passphrase"
+          />
+          <button id="login-submit" class="round-fill" type="submit" aria-label="Sign in">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor"
+                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M20 6v4a5 5 0 0 1-5 5H6" />
+              <path d="M10 10l-4 5 4 5" />
+              <path d="M4 21h16" />
+            </svg>
+          </button>
+        </form>
+        <p id="login-note" class="login-note"></p>
+      </div>
+    </section>
+
+    <div id="app" class="hidden">
+      <aside id="sidebar">
+        <header class="sidebar-header">
+          <span class="brand">alma herdr</span>
+          <span id="connection" class="pill">connecting</span>
+        </header>
+        <div class="sidebar-actions">
+          <button id="new-workspace" type="button">New workspace</button>
+          <button id="new-tab" type="button">New tab</button>
+        </div>
+        <div id="tree" class="tree"></div>
+        <details id="remote-details" class="remote-details" open>
+          <summary>Remote access</summary>
+          <section id="remote-panel" class="remote-panel">
+            <p class="hint">
+              Register this desktop with an Alma relay, then open the pairing link
+              on another device.
+            </p>
+            <div class="field">
+              <input id="relay-url" type="url" placeholder="https://relay.example.com" />
+              <button id="relay-connect" type="button">Connect</button>
+            </div>
+            <div class="field">
+              <input id="relay-token" type="password" placeholder="Relay token (official relay only)" />
+            </div>
+            <div class="field">
+              <button id="relay-disconnect" type="button">Disconnect</button>
+              <button id="relay-rotate" type="button">New code</button>
+            </div>
+            <div id="relay-state" class="relay-state"></div>
+            <div id="relay-pair" class="relay-pair hidden">
+              <div class="qr">
+                <img id="relay-qr" alt="Pairing code" />
+                <span id="relay-qr-label">Anywhere</span>
+                <code id="relay-link"></code>
+              </div>
+              <div class="qr" id="relay-qr-lan-box">
+                <img id="relay-qr-lan" alt="Pairing code for this network" />
+                <span id="relay-qr-lan-label">On this network</span>
+                <code id="relay-link-lan"></code>
+              </div>
+              <p id="qr-note" class="qr-note hidden">
+                The pairing code is only drawn on the machine that runs the desktop.
+              </p>
+            </div>
+          </section>
+        </details>
+      </aside>
+      <main id="main">
+        <div id="remote-banner" class="remote-banner hidden"></div>
+
+        <!-- The list of the terminals that are open. -->
+        <section id="screen-list" class="screen">
+          <header class="app-bar">
+            <button id="list-back" class="round-outline" type="button" aria-label="Leave the session">
+              <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor"
+                   stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M15 4.5L7.5 12l7.5 7.5" />
+              </svg>
+            </button>
+            <div class="app-bar-center">
+              <span class="app-bar-title">
+                <span class="mark" aria-hidden="true">◈</span>Terminals
+                <svg class="signal" viewBox="0 0 24 24" width="15" height="15" fill="none"
+                     stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
+                  <path d="M4.5 9.5a11 11 0 0 1 15 0" />
+                  <path d="M8 13a6.5 6.5 0 0 1 8 0" />
+                  <path d="M11.4 16.4a2.2 2.2 0 0 1 1.2 0" />
+                </svg>
+              </span>
+            </div>
+            <div class="pill-group">
+              <button id="list-more" class="pill-button accent" type="button" aria-label="More">
+                <svg viewBox="0 0 24 24" width="19" height="19" fill="currentColor" aria-hidden="true">
+                  <circle cx="6" cy="12" r="1.7" /><circle cx="12" cy="12" r="1.7" /><circle cx="18" cy="12" r="1.7" />
+                </svg>
+              </button>
+              <button id="list-new" class="pill-button accent" type="button" aria-label="New terminal">
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor"
+                     stroke-width="2" stroke-linecap="round" aria-hidden="true">
+                  <path d="M12 5v14M5 12h14" />
+                </svg>
+              </button>
+            </div>
+          </header>
+          <div id="pair-panel" class="pair-panel hidden">
+            <input id="pair-input" type="url" placeholder="Paste a pairing link" />
+            <button id="pair-scan" type="button">Scan QR</button>
+            <button id="pair-apply" type="button">Connect</button>
+          </div>
+          <div id="scan-panel" class="scan-panel hidden">
+            <video id="scan-video" playsinline muted></video>
+            <div class="scan-row">
+              <span id="scan-status" class="scan-status"></span>
+              <button id="scan-stop" type="button">Stop</button>
+            </div>
+          </div>
+          <div id="session-list" class="session-list"></div>
+        </section>
+
+        <!-- One terminal, with the keys below it. -->
+        <section id="screen-detail" class="screen hidden">
+          <header class="app-bar">
+            <button id="detail-back" class="round-outline" type="button" aria-label="Back to the terminals">
+              <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor"
+                   stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M15 4.5L7.5 12l7.5 7.5" />
+              </svg>
+            </button>
+            <div class="app-bar-center">
+              <button id="tab-switch" class="tab-switch" type="button" aria-haspopup="true" aria-expanded="false">
+                <span id="tab-number">1</span>
+                <svg class="chevron" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor"
+                     stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M6 9.5l6 6 6-6" />
+                </svg>
+              </button>
+              <span class="app-bar-sub">
+                <span id="detail-dot" class="dot"></span>
+                <span id="detail-status">done</span>
+                <span class="sep">·</span>
+                <span id="detail-title">no pane</span>
+              </span>
+            </div>
+            <div class="app-bar-right">
+              <button id="tree-toggle" class="round-outline" type="button" aria-label="Show the sessions">
+                <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor"
+                     stroke-width="2" stroke-linecap="round" aria-hidden="true">
+                  <path d="M4 7h16M4 12h16M4 17h16" />
+                </svg>
+              </button>
+              <div class="pill-group">
+                <button id="detail-more" class="pill-button" type="button" aria-label="More">
+                  <svg viewBox="0 0 24 24" width="19" height="19" fill="currentColor" aria-hidden="true">
+                    <circle cx="6" cy="12" r="1.7" /><circle cx="12" cy="12" r="1.7" /><circle cx="18" cy="12" r="1.7" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+          </header>
+          <div id="terminal-view" class="view">
+            <canvas id="terminal" tabindex="0"></canvas>
+          </div>
+          <footer id="statusbar" class="statusbar"></footer>
+          <div id="key-chips" class="key-chips"></div>
+          <div id="command-bar" class="command-bar">
+            <button id="keys-toggle" class="round-fill" type="button" aria-label="Show the keys">
+              <span class="command-glyph" aria-hidden="true">⌘</span>
+            </button>
+            <input
+              id="command-input"
+              type="text"
+              placeholder="Type a command"
+              autocomplete="off"
+              autocapitalize="off"
+              autocorrect="off"
+              spellcheck="false"
+              aria-label="Type to send to the pane"
+            />
+            <button id="keyboard-toggle" class="round-outline" type="button" aria-label="Show the keyboard">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor"
+                   stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <rect x="2.5" y="4.5" width="19" height="12" rx="2.5" />
+                <path d="M6 8.5h.01M9.5 8.5h.01M13 8.5h.01M16.5 8.5h.01M6 11.8h.01M9.5 11.8h.01M13 11.8h.01M16.5 11.8h.01" />
+                <path d="M7.5 14.6h9" />
+                <path d="M9 19.5l3 2.5 3-2.5" />
+              </svg>
+            </button>
+            <button id="command-send" class="round-fill" type="button" aria-label="Send to the pane">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor"
+                   stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M20 6v4a5 5 0 0 1-5 5H6" />
+                <path d="M10 10l-4 5 4 5" />
+                <path d="M4 21h16" />
+              </svg>
+            </button>
+          </div>
+        </section>
+
+        <div id="list-menu" class="popover hidden"></div>
+        <div id="tab-menu" class="popover popover-menu hidden"></div>
+        <div id="action-menu" class="popover hidden"></div>
+      </main>
+    </div>
+    <div id="scrim" class="scrim hidden"></div>
+    <script type="module" src="dist/main.js"></script>
+  </body>
+</html>

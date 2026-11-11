@@ -1,0 +1,411 @@
+import { agentKind, agentLabel, resumeArgs } from './agents.js';
+import { type PaneRecord, type SessionSnapshot } from './api.js';
+import { ICONS } from './icons.js';
+import { TerminalInput } from './input.js';
+import { statusClass } from './session-list.js';
+import { type FitMode } from './terminal.js';
+
+export interface DetailCallbacks {
+  pickPane(paneId: string): void;
+  sendText(pane: PaneRecord, text: string): Promise<void>;
+  sendKeys(pane: PaneRecord, keys: string[]): Promise<void>;
+  restartAgent(pane: PaneRecord, continueAfter: boolean): Promise<void>;
+  toggleTree(): void;
+  back(): void;
+  status(message: string, isError: boolean): void;
+  setFitMode(mode: FitMode): void;
+  paneSize(): { cols: number; rows: number };
+}
+
+const KEY_CHIPS: { label: string; keys: string[] }[] = [
+  { label: 'esc', keys: ['esc'] },
+  { label: '`', keys: [] },
+  { label: '^C', keys: ['ctrl+c'] },
+  { label: '⇥', keys: ['tab'] },
+  { label: '⇧⇥', keys: ['shift+tab'] },
+  { label: '→', keys: ['right'] },
+  { label: '↑', keys: ['up'] },
+  { label: '↓', keys: ['down'] }
+];
+
+const MODE_KEY = 'alma-herdr-web:fit-mode';
+
+function isPhone(): boolean {
+  return window.matchMedia('(max-width: 760px)').matches;
+}
+
+function el<T extends HTMLElement>(id: string): T {
+  const node = document.getElementById(id);
+  if (node === null) {
+    throw new Error('missing element: ' + id);
+  }
+  return node as T;
+}
+
+function readMode(): FitMode {
+  try {
+    const raw = window.localStorage.getItem(MODE_KEY);
+    if (raw === 'original' || raw === 'shrink' || raw === 'wrap') {
+      return raw;
+    }
+  } catch {
+    // The choice then lives only as long as the page.
+  }
+  return window.matchMedia('(max-width: 760px)').matches ? 'wrap' : 'original';
+}
+
+export class DetailScreen {
+  private readonly actions: DetailCallbacks;
+  private snapshot: SessionSnapshot | null = null;
+  private pane: PaneRecord | null = null;
+  private mode: FitMode = 'wrap';
+
+  private readonly tabSwitch = el<HTMLButtonElement>('tab-switch');
+  private readonly tabNumber = el<HTMLSpanElement>('tab-number');
+  private readonly tabMenu = el<HTMLDivElement>('tab-menu');
+  private readonly actionMenu = el<HTMLDivElement>('action-menu');
+  private readonly detailDot = el<HTMLSpanElement>('detail-dot');
+  private readonly detailStatus = el<HTMLSpanElement>('detail-status');
+  private readonly detailTitle = el<HTMLSpanElement>('detail-title');
+  private readonly keyChips = el<HTMLDivElement>('key-chips');
+  private readonly commandInput = el<HTMLInputElement>('command-input');
+  private readonly commandSend = el<HTMLButtonElement>('command-send');
+  private readonly keysToggle = el<HTMLButtonElement>('keys-toggle');
+  private readonly keyboardToggle = el<HTMLButtonElement>('keyboard-toggle');
+  private readonly canvas = el<HTMLCanvasElement>('terminal');
+  private readonly input: TerminalInput;
+  private inputPaneId: string | null = null;
+
+  constructor(actions: DetailCallbacks) {
+    this.actions = actions;
+    this.mode = readMode();
+    this.actions.setFitMode(this.mode);
+    this.input = new TerminalInput(this.commandInput, this.canvas, {
+      sendText: text => {
+        const pane = this.pane;
+        if (pane !== null) {
+          void this.actions.sendText(pane, text);
+        }
+      },
+      sendKeys: keys => {
+        const pane = this.pane;
+        if (pane !== null) {
+          void this.actions.sendKeys(pane, keys);
+        }
+      }
+    });
+    this.wire();
+    this.renderKeyChips();
+  }
+
+  private wire(): void {
+    el<HTMLButtonElement>('detail-back').addEventListener('click', () => {
+      this.closeMenus();
+      this.actions.back();
+    });
+    el<HTMLButtonElement>('tree-toggle').addEventListener('click', () => {
+      this.closeMenus();
+      this.actions.toggleTree();
+    });
+    el<HTMLButtonElement>('detail-more').addEventListener('click', () => {
+      if (this.actionMenu.classList.contains('hidden')) {
+        this.renderActionMenu();
+        this.actionMenu.classList.remove('hidden');
+        this.closeTabMenu();
+      } else {
+        this.closeActionMenu();
+      }
+    });
+
+    this.tabSwitch.addEventListener('click', () => {
+      if (this.tabMenu.classList.contains('hidden')) {
+        this.renderTabMenu();
+        this.tabMenu.classList.remove('hidden');
+        this.closeActionMenu();
+      } else {
+        this.closeTabMenu();
+      }
+    });
+
+    this.keysToggle.addEventListener('click', () => {
+      this.keyChips.classList.toggle('hidden');
+    });
+    this.keyboardToggle.addEventListener('click', () => {
+      // The field is the input surface of the phone: every key it takes
+      // goes to the pane right away.
+      this.input.focusField();
+    });
+
+    this.commandSend.addEventListener('click', () => {
+      this.input.submit();
+    });
+
+    this.canvas.addEventListener('mousedown', () => {
+      if (!isPhone()) {
+        // A desktop has a keyboard of its own, so the screen takes it.
+        this.input.focusScreen();
+      }
+    });
+    this.canvas.addEventListener('click', () => {
+      if (isPhone()) {
+        // A touch screen has no keyboard of its own, so the software keyboard
+        // goes into the field, which hands every key to the pane at once.
+        this.input.focusField();
+      }
+    });
+    const detailMore = el<HTMLButtonElement>('detail-more');
+    document.addEventListener('click', event => {
+      const target = event.target as Node | null;
+      if (target === null) {
+        return;
+      }
+      if (
+        this.actionMenu.contains(target) ||
+        this.tabMenu.contains(target)
+      ) {
+        return;
+      }
+      // The button that opens a menu must not close it again right away.
+      if (
+        detailMore.contains(target) ||
+        this.tabSwitch.contains(target)
+      ) {
+        return;
+      }
+      this.closeMenus();
+    });
+  }
+
+  private renderKeyChips(): void {
+    this.keyChips.replaceChildren();
+    for (const chip of KEY_CHIPS) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'key-chip';
+      button.textContent = chip.label;
+      button.addEventListener('click', () => {
+        if (chip.keys.length === 0) {
+          // The chip holds a character, such as the backtick.
+          this.input.type(chip.label);
+          return;
+        }
+        this.input.sendSpecial(chip.keys);
+      });
+      this.keyChips.appendChild(button);
+    }
+  }
+
+  private renderTabMenu(): void {
+    this.tabMenu.replaceChildren();
+    const snapshot = this.snapshot;
+    if (snapshot === null) {
+      return;
+    }
+    for (const workspace of snapshot.workspaces) {
+      for (const tab of snapshot.tabs.filter(t => t.workspace_id === workspace.workspace_id)) {
+        for (const pane of snapshot.panes.filter(p => p.tab_id === tab.tab_id)) {
+          const item = document.createElement('button');
+          item.type = 'button';
+          item.className =
+            'popover-item' + (pane.pane_id === this.pane?.pane_id ? ' selected' : '');
+          const glyph = document.createElement('span');
+          glyph.className = 'popover-glyph quiet';
+          glyph.innerHTML = pane.agent !== null ? ICONS.agent : ICONS.folder;
+          const text = document.createElement('span');
+          text.className = 'popover-text';
+          const label = document.createElement('span');
+          label.className = 'popover-label';
+          const title = pane.terminal_title_stripped || pane.title || pane.pane_id;
+          label.textContent = (tab.label || tab.tab_id) + ' · ' + title;
+          const hint = document.createElement('span');
+          hint.className = 'popover-hint';
+          hint.textContent = pane.agent_status;
+          text.append(label, hint);
+          item.append(glyph, text);
+          item.addEventListener('click', () => {
+            this.closeMenus();
+            void this.actions.pickPane(pane.pane_id);
+          });
+          this.tabMenu.appendChild(item);
+        }
+      }
+    }
+  }
+
+  private renderActionMenu(): void {
+    this.actionMenu.replaceChildren();
+
+    const modes: { key: FitMode; label: string; glyph: string }[] = [
+      { key: 'wrap', label: 'Wrap to Phone', glyph: ICONS.wrap },
+      { key: 'original', label: 'Original Width', glyph: ICONS.width },
+      { key: 'shrink', label: 'Shrink to Fit', glyph: ICONS.shrink }
+    ];
+    for (const mode of modes) {
+      const active = mode.key === this.mode;
+      this.actionMenu.appendChild(
+        this.item(
+          active ? ICONS.check : mode.glyph,
+          mode.label,
+          '',
+          () => {
+            this.setMode(mode.key);
+            this.closeActionMenu();
+          },
+          active
+        )
+      );
+    }
+    this.actionMenu.appendChild(this.separator());
+
+    this.renderAgentActions();
+
+    const size = this.actions.paneSize();
+    const foot = document.createElement('div');
+    foot.className = 'popover-foot';
+    foot.textContent = 'Pane is ' + size.cols + ' × ' + size.rows;
+    this.actionMenu.appendChild(foot);
+  }
+
+  private renderAgentActions(): void {
+    const pane = this.pane;
+    if (pane === null) {
+      return;
+    }
+    const kind = agentKind(pane);
+    if (kind.length === 0) {
+      return;
+    }
+    const label = agentLabel(kind);
+    const canContinue = resumeArgs(pane) !== null;
+
+    this.actionMenu.appendChild(
+      this.item(
+        ICONS.restart,
+        'Restart ' + label,
+        'Quit the agent and start it again',
+        () => {
+          this.closeActionMenu();
+          void this.actions.restartAgent(pane, false);
+        }
+      )
+    );
+    this.actionMenu.appendChild(
+      this.item(
+        ICONS.restartContinue,
+        'Restart & Continue',
+        canContinue ? 'Open the same session and carry on' : 'This pane has no session to open',
+        () => {
+          this.closeActionMenu();
+          void this.actions.restartAgent(pane, true);
+        },
+        false,
+        !canContinue
+      )
+    );
+    this.actionMenu.appendChild(this.separator());
+  }
+
+  private item(
+    glyph: string,
+    label: string,
+    hint: string,
+    onClick: () => void,
+    strongGlyph = false,
+    disabled = false
+  ): HTMLButtonElement {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'popover-item';
+    button.disabled = disabled;
+    const mark = document.createElement('span');
+    mark.className = 'popover-glyph' + (strongGlyph ? ' on' : '');
+    mark.innerHTML = glyph;
+    const text = document.createElement('span');
+    text.className = 'popover-text';
+    const title = document.createElement('span');
+    title.className = 'popover-label';
+    title.textContent = label;
+    text.appendChild(title);
+    if (hint.length > 0) {
+      const sub = document.createElement('span');
+      sub.className = 'popover-hint';
+      sub.textContent = hint;
+      text.appendChild(sub);
+    }
+    button.append(mark, text);
+    button.addEventListener('click', onClick);
+    return button;
+  }
+
+  private separator(): HTMLDivElement {
+    const line = document.createElement('div');
+    line.className = 'popover-sep';
+    return line;
+  }
+
+  setMode(mode: FitMode): void {
+    this.mode = mode;
+    try {
+      window.localStorage.setItem(MODE_KEY, mode);
+    } catch {
+      // The choice then lives only as long as the page.
+    }
+    this.actions.setFitMode(mode);
+  }
+
+  update(snapshot: SessionSnapshot | null, pane: PaneRecord | null): void {
+    this.snapshot = snapshot;
+    const paneId = pane?.pane_id ?? null;
+    if (paneId !== this.inputPaneId) {
+      // Flush while the sink still points to the old pane.
+      this.input.reset();
+      this.inputPaneId = paneId;
+    }
+    this.pane = pane;
+    this.input.setEnabled(pane !== null);
+
+    if (pane === null) {
+      this.tabNumber.textContent = '—';
+      this.detailStatus.textContent = 'no pane';
+      this.detailTitle.textContent = '';
+      this.detailDot.className = 'dot';
+      if (!this.actionMenu.classList.contains('hidden')) {
+        this.renderActionMenu();
+      }
+      return;
+    }
+
+    const tab = snapshot?.tabs.find(t => t.tab_id === pane.tab_id);
+    this.tabNumber.textContent = tab?.number ? String(tab.number) : '1';
+    this.detailStatus.textContent = pane.agent_status;
+    // The name under the number is the workspace, the Alma app names it
+    // that way too.
+    const workspace = snapshot?.workspaces.find(w => w.workspace_id === pane.workspace_id);
+    this.detailTitle.textContent =
+      workspace?.label || pane.terminal_title_stripped || pane.title || pane.pane_id;
+    this.detailDot.className = 'dot ' + statusClass(pane.agent_status);
+    if (!this.actionMenu.classList.contains('hidden')) {
+      this.renderActionMenu();
+    }
+  }
+
+  focusTerminal(): void {
+    if (!isPhone()) {
+      this.input.focusScreen();
+    }
+  }
+
+  closeTabMenu(): void {
+    this.tabMenu.classList.add('hidden');
+    this.tabSwitch.setAttribute('aria-expanded', 'false');
+  }
+
+  closeActionMenu(): void {
+    this.actionMenu.classList.add('hidden');
+  }
+
+  closeMenus(): void {
+    this.closeTabMenu();
+    this.closeActionMenu();
+  }
+}

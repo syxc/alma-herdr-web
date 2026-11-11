@@ -1,0 +1,9 @@
+/* Playback symbols absent from Symbols Nerd Font Mono. See docs/third-party.md. */
+@font-face {
+  font-family: "Symbols Nerd Font Mono";
+  src: url("playback.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  unicode-range: U+23F4-23FA;
+}
