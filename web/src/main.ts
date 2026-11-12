@@ -32,8 +32,9 @@ import { createAgentTerminal, type NewTabAgent, NewTerminalMenu } from "./new-te
 import { forgetPairing, type Pairing, readPairing, readSavedPairing, savePairing } from "./pairing.js"
 import { restartAgent as runRestart } from "./restart.js"
 import { type ScannerHandle, startScanner } from "./scanner.js"
-import { renderSessionList, statusClass } from "./session-list.js"
+import { renderSessionList } from "./session-list.js"
 import { type FitMode, TerminalView } from "./terminal.js"
+import { renderWorkspaceTree } from "./workspace-tree.js"
 
 function el<T extends HTMLElement>(id: string): T {
   const node = document.getElementById(id)
@@ -216,58 +217,13 @@ function selectedPane(): PaneRecord | null {
 }
 
 function renderTree(): void {
-  tree.replaceChildren()
-  if (snapshot === null) {
-    return
-  }
-  for (const workspace of snapshot.workspaces) {
-    const workspaceRow = document.createElement("div")
-    workspaceRow.className = "row workspace"
-    const workspaceDot = document.createElement("span")
-    workspaceDot.className = `dot ${statusClass(workspace.agent_status)}`
-    const workspaceLabel = document.createElement("span")
-    workspaceLabel.className = "label"
-    workspaceLabel.textContent = workspace.label || workspace.workspace_id
-    const workspaceCount = document.createElement("span")
-    workspaceCount.className = "count"
-    workspaceCount.textContent = String(workspace.tab_count)
-    workspaceRow.append(workspaceDot, workspaceLabel, workspaceCount)
-    workspaceRow.addEventListener("click", () => {
-      void selectWorkspace(workspace.workspace_id)
-    })
-    tree.appendChild(workspaceRow)
-
-    for (const tab of snapshot.tabs.filter((t) => t.workspace_id === workspace.workspace_id)) {
-      const tabRow = document.createElement("div")
-      tabRow.className = "row tab"
-      const tabDot = document.createElement("span")
-      tabDot.className = `dot ${statusClass(tab.agent_status)}`
-      const tabLabel = document.createElement("span")
-      tabLabel.className = "label"
-      tabLabel.textContent = tab.label || tab.tab_id
-      tabRow.append(tabDot, tabLabel)
-      tabRow.addEventListener("click", () => {
-        void selectTab(tab.tab_id)
-      })
-      tree.appendChild(tabRow)
-
-      for (const pane of snapshot.panes.filter((p) => p.tab_id === tab.tab_id)) {
-        const paneRow = document.createElement("div")
-        paneRow.className = `row pane${pane.pane_id === selectedPaneId ? " selected" : ""}`
-        const paneDot = document.createElement("span")
-        paneDot.className = `dot ${statusClass(pane.agent_status)}`
-        const paneLabel = document.createElement("span")
-        paneLabel.className = "label"
-        const title = pane.terminal_title_stripped || pane.title || pane.agent || pane.pane_id
-        paneLabel.textContent = title
-        paneRow.append(paneDot, paneLabel)
-        paneRow.addEventListener("click", () => {
-          void selectPane(pane.pane_id)
-        })
-        tree.appendChild(paneRow)
-      }
-    }
-  }
+  renderWorkspaceTree(tree, {
+    snapshot,
+    selectedPaneId,
+    onWorkspace: (id) => void selectWorkspace(id),
+    onTab: (id) => void selectTab(id),
+    onPane: (id) => void selectPane(id),
+  })
 }
 
 function renderList(): void {
@@ -651,14 +607,25 @@ function contentSignature(state: SessionSnapshot | null): string {
   if (state === null) {
     return ""
   }
-  const workspaces = state.workspaces
-    .map((workspace) => `${workspace.workspace_id}:${workspace.agent_status}`)
-    .join(",")
-  const tabs = state.tabs.map((tab) => `${tab.tab_id}:${tab.agent_status}`).join(",")
-  const panes = state.panes
-    .map((pane) => `${pane.pane_id}:${pane.agent_status}:${pane.terminal_title_stripped ?? ""}:${pane.cwd ?? ""}`)
-    .join(",")
-  return `${workspaces}|${tabs}|${panes}`
+  return JSON.stringify([
+    state.workspaces.map((workspace) => [
+      workspace.workspace_id,
+      workspace.label,
+      workspace.tab_count,
+      workspace.agent_status,
+    ]),
+    state.tabs.map((tab) => [tab.tab_id, tab.workspace_id, tab.label, tab.agent_status]),
+    state.panes.map((pane) => [
+      pane.pane_id,
+      pane.tab_id,
+      pane.workspace_id,
+      pane.agent_status,
+      pane.terminal_title_stripped,
+      pane.title,
+      pane.agent,
+      pane.cwd,
+    ]),
+  ])
 }
 
 function connectionFailed(error: unknown): void {

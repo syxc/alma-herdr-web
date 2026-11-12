@@ -63,6 +63,7 @@
   import { KeyToolbar } from "/dist/key-toolbar.js"
   import { NewTerminalMenu } from "/dist/new-terminal.js"
   import { renderSessionList } from "/dist/session-list.js"
+  import { renderWorkspaceTree } from "/dist/workspace-tree.js"
 
   const preview = document.querySelector("#preview")
   const results = document.querySelector("#results")
@@ -352,6 +353,103 @@
     creationState = { workspaces: [] }
     newMenu.update()
     check(el("list-new").disabled && !newMenu.isOpen(), "An empty workspace list disables New Tab")
+    const treeState = {
+      workspaces: [
+        { workspace_id: "w1", label: "e2e-check", tab_count: 2, agent_status: "working" },
+        {
+          workspace_id: "w2",
+          label: "A workspace with a long title for truncation",
+          tab_count: 1,
+          agent_status: "idle",
+        },
+      ],
+      tabs: [
+        { tab_id: "t1", workspace_id: "w1", label: "1", agent_status: "working" },
+        { tab_id: "t2", workspace_id: "w1", label: "relay-acceptance", agent_status: "blocked" },
+        { tab_id: "t3", workspace_id: "w2", label: "A long tab label that must fit the sidebar", agent_status: "idle" },
+      ],
+      panes: [
+        { pane_id: "p1", tab_id: "t1", title: "wB:p1", agent_status: "idle" },
+        { pane_id: "p2", tab_id: "t1", terminal_title_stripped: "almaprobe echo", agent_status: "working" },
+        { pane_id: "p3", tab_id: "t2", title: "wB:p3", agent_status: "blocked" },
+        { pane_id: "p4", tab_id: "t3", title: "A very long pane title that must be truncated", agent_status: "idle" },
+      ],
+    }
+    const picks = []
+    renderWorkspaceTree(el("tree"), {
+      snapshot: treeState,
+      selectedPaneId: "p2",
+      onWorkspace: (id) => picks.push(["workspace", id]),
+      onTab: (id) => picks.push(["tab", id]),
+      onPane: (id) => picks.push(["pane", id]),
+    })
+    check(
+      JSON.stringify([...el("tree").querySelectorAll(".pane .label")].map((node) => node.textContent)) ===
+        JSON.stringify(["wB:p1", "almaprobe echo", "wB:p3", "A very long pane title that must be truncated"]),
+      "Workspace tree retains every pane title and backend order",
+    )
+    check(
+      el("tree").querySelectorAll("section.tree-workspace").length === 2 &&
+        el("tree").querySelector(".tree-tab .tree-panes").children.length === 2 &&
+        el("tree").querySelector(".count").textContent === "2 tabs" &&
+        el("tree").querySelector(".workspace").getAttribute("aria-label").includes("2 tabs"),
+      "Workspace tree separates workspaces, tabs and split panes with a labelled count",
+    )
+    const chosen = el("tree").querySelector('[data-pane="p2"]')
+    check(
+      chosen.getAttribute("aria-current") === "true" &&
+        chosen.classList.contains("selected") &&
+        chosen.getAttribute("aria-label").includes("working") &&
+        chosen.querySelector(".dot").classList.contains("working"),
+      "Workspace tree preserves the selection and status with accessible labels",
+    )
+    for (const selector of [".workspace", ".tab", '[data-pane="p2"]']) el("tree").querySelector(selector).click()
+    check(
+      JSON.stringify(picks) ===
+        JSON.stringify([
+          ["workspace", "w1"],
+          ["tab", "t1"],
+          ["pane", "p2"],
+        ]),
+      "Workspace, tab and pane buttons each invoke only their original selection action",
+    )
+    for (const theme of ["dark", "light"]) {
+      for (const width of [320, 390, 1024]) {
+        show(theme, width, "detail")
+        el("sidebar").classList.add("open")
+        await frame()
+        const rows = [...el("tree").querySelectorAll("button")]
+        check(
+          rows.every((button) => button.offsetHeight >= 44) && el("tree").scrollWidth <= el("tree").clientWidth,
+          `${theme} ${width}px tree: all rows keep touch targets and fit the sidebar`,
+        )
+        check(
+          Number.parseFloat(style(chosen).fontSize) >
+            Number.parseFloat(style(el("tree").querySelector(".tab")).fontSize) &&
+            style(chosen).boxShadow !== "none" &&
+            style(chosen).backgroundColor !== "rgba(0, 0, 0, 0)",
+          `${theme} ${width}px tree: pane names and current selection have clear visual priority`,
+        )
+        check(
+          style(el("tree").querySelector(".tree-tabs")).borderLeftWidth === "1px" &&
+            style(el("tree").querySelector(".tree-panes")).borderLeftWidth === "1px" &&
+            [...el("tree").querySelectorAll(".label")].every(
+              (label) =>
+                style(label).textOverflow === "ellipsis" &&
+                label.getBoundingClientRect().right <= el("sidebar").getBoundingClientRect().right,
+            ),
+          `${theme} ${width}px tree: hierarchy guides and long title truncation stay within bounds`,
+        )
+        el("tree").scrollTop = el("tree").scrollHeight
+        check(
+          el("tree").querySelector('[data-pane="p4"]').getBoundingClientRect().bottom <=
+            el("tree").getBoundingClientRect().bottom + 1,
+          `${theme} ${width}px tree: the final pane can be reached by scrolling`,
+        )
+        el("tree").scrollTop = 0
+        el("sidebar").classList.remove("open")
+      }
+    }
     show("dark", 390, "detail")
     el("detail-back").focus()
     document.title = "PASS: UI details"

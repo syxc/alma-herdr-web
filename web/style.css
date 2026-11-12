@@ -1169,47 +1169,111 @@ button.active {
 
 .tree {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
-  padding: 6px 0 20px;
+  padding: 10px 8px 20px;
 }
 
+.tree-workspace + .tree-workspace {
+  margin-top: 16px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+.tree-tabs,
+.tree-panes {
+  list-style: none;
+  padding: 0;
+}
+.tree-tabs {
+  margin: 4px 0 0 14px;
+  border-left: 1px solid var(--line);
+}
+.tree-tab + .tree-tab {
+  margin-top: 6px;
+}
+.tree-panes {
+  margin: 0 0 0 14px;
+  border-left: 1px solid var(--line-soft);
+}
 .row {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
   min-height: 44px;
-  margin: 2px 8px;
+  margin: 0;
   padding: 8px 10px;
-  border-radius: 10px;
-  font-size: 14px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--fg);
+  text-align: left;
   cursor: pointer;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
-.row.selected {
-  background: var(--selection);
+.tree-copy {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+.tree-kind {
+  flex: none;
+  color: var(--fg-muted);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.03em;
 }
 .row .label {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .row.workspace {
+  min-height: 60px;
+}
+.workspace .tree-copy {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+.workspace .label {
+  max-width: 100%;
+  font-size: 15px;
   font-weight: 600;
-  margin-top: 6px;
+  color: var(--fg-strong);
+}
+.row .count {
+  flex: none;
+  padding: 2px 6px;
+  border-radius: 5px;
+  background: var(--surface-2);
+  color: var(--fg-muted);
+  font-size: 11px;
+  font-weight: 400;
+  white-space: nowrap;
 }
 .row.tab {
-  padding-left: 24px;
+  font-size: 12px;
+  font-weight: 500;
   color: var(--fg-muted);
 }
 .row.pane {
-  padding-left: 38px;
-  color: var(--fg-muted);
+  font-size: 14px;
+  font-weight: 400;
 }
-.row .count {
-  margin-left: auto;
-  color: var(--fg-muted);
-  font-size: 11px;
+.row.pane.selected {
+  background: var(--selection);
+  box-shadow: inset 2px 0 var(--accent-text);
+  color: var(--fg-strong);
+}
+.row.pane.selected .tree-kind {
+  color: var(--accent-text);
+}
+.row:focus-visible {
+  outline-offset: -2px;
 }
 
 /* The remote access and the pairing ----------------------------------- */
