@@ -23,6 +23,9 @@ function apply(): void {
   document.querySelector('meta[name="theme-color"]')?.setAttribute("content", theme === "dark" ? "#282c34" : "#ffffff")
   for (const select of document.querySelectorAll<HTMLSelectElement>("[data-appearance-select]")) {
     select.value = appearance
+    const value = select.parentElement?.querySelector("[data-appearance-value]")
+    if (value !== null && value !== undefined)
+      value.textContent = appearance.charAt(0).toUpperCase() + appearance.slice(1)
   }
   changed(theme)
 }
@@ -67,6 +70,14 @@ export function appendAppearanceControl(container: HTMLElement): void {
     }
     apply()
   })
-  label.append(select)
+  const control = document.createElement("span")
+  control.className = "appearance-control"
+  const value = document.createElement("span")
+  value.className = "appearance-value"
+  value.dataset.appearanceValue = ""
+  value.setAttribute("aria-hidden", "true")
+  value.textContent = appearance.charAt(0).toUpperCase() + appearance.slice(1)
+  control.append(select, value)
+  label.append(control)
   container.append(label)
 }

@@ -208,16 +208,19 @@
           )
           check(menu.scrollWidth <= menu.clientWidth, `${theme} ${width}px ${view}: menu text fits`)
           const select = menu.querySelector("select")
-          const selectStyle = style(select)
+          const control = select.closest(".appearance-control")
+          const value = control.querySelector(".appearance-value")
+          const valueStyle = style(value)
           const measure = doc.createElement("canvas").getContext("2d")
-          measure.font = selectStyle.font
+          measure.font = valueStyle.font
           check(
-            selectStyle.appearance === "none" &&
+            control.offsetHeight >= 44 &&
               select.offsetHeight >= 44 &&
-              Number.parseFloat(selectStyle.paddingRight) >= 36 &&
-              select.clientWidth -
-                Number.parseFloat(selectStyle.paddingLeft) -
-                Number.parseFloat(selectStyle.paddingRight) >=
+              valueStyle.fontSize === "14px" &&
+              Number.parseFloat(style(control, "::before").height) === 36 &&
+              value.clientWidth -
+                Number.parseFloat(valueStyle.paddingLeft) -
+                Number.parseFloat(valueStyle.paddingRight) >=
                 measure.measureText("System").width,
             `${theme} ${width}px ${view}: Appearance text has space separate from its arrow`,
           )
@@ -225,15 +228,47 @@
             Number(style(menu.querySelector(":disabled")).opacity) < 1,
             `${theme} ${width}px ${view}: disabled actions remain distinct`,
           )
+          select.focus()
+          check(
+            style(control, "::before").borderTopWidth === "1px" &&
+              style(control, "::before").boxShadow === "none" &&
+              style(select).color === "rgba(0, 0, 0, 0)" &&
+              style(select).outlineStyle === "none",
+            `${theme} ${width}px ${view}: Appearance uses one thin focus border`,
+          )
           menu.classList.add("hidden")
+          if (view === "detail") {
+            const chips = [...el("key-chips").querySelectorAll("button")]
+            check(
+              chips.every((button) => button.offsetHeight >= 44 && style(button, "::before").height === "36px") &&
+                chips
+                  .filter((button) => !button.classList.contains("key-symbol"))
+                  .every((button) => style(button).fontSize === "12px") &&
+                [
+                  ...chips.filter((button) => button.classList.contains("key-symbol")),
+                  doc.querySelector(".keys-add"),
+                ].every((button) => style(button).fontSize === "20px"),
+              `${theme} ${width}px: compact shortcuts keep touch targets and larger symbols`,
+            )
+            el("command-input").focus()
+            check(
+              style(doc.querySelector(".realtime-input")).borderTopWidth === "1px" &&
+                style(doc.querySelector(".realtime-input")).boxShadow === "none" &&
+                doc.querySelector(".realtime-input").offsetHeight <= 46,
+              `${theme} ${width}px: input card stays compact with one thin focus border`,
+            )
+          }
         }
       }
     }
     show("dark", 390, "detail")
     await frame()
     check(
-      el("command-input").offsetHeight >= 24 && style(el("command-input")).fontSize === "16px",
-      "Phone input keeps readable text and avoids focus zoom",
+      style(el("command-input")).fontSize === "16px" &&
+        style(el("command-input")).transform === "matrix(0.875, 0, 0, 0.875, 0, 0)" &&
+        el("command-input").getBoundingClientRect().width <=
+          el("command-input").parentElement.getBoundingClientRect().width,
+      "Phone input displays 14px text while retaining a 16px native field",
     )
     check(
       [...el("key-chips").querySelectorAll("button")].every((button) => button.offsetHeight >= 44),

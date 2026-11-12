@@ -47,6 +47,13 @@ function environment(t, stored = null, dark = false) {
         children: [],
         append(...children) {
           this.children.push(...children)
+          for (const child of children) if (typeof child === "object") child.parentElement = this
+        },
+        setAttribute(name, value) {
+          this[name] = value
+        },
+        querySelector() {
+          return this.children.find((child) => child.dataset?.appearanceValue !== undefined) ?? null
         },
         addEventListener(type, callback) {
           this[type] = callback
@@ -73,6 +80,11 @@ test("system changes update the theme until an explicit appearance is chosen", (
   env.selects[0].value = "light"
   env.selects[0].change()
   assert.equal(env.selects[1].value, "light", "other menus reflect the same preference")
+  assert.equal(
+    env.selects[1].parentElement.querySelector().textContent,
+    "Light",
+    "compact value follows the native select",
+  )
   assert.equal(env.storage.getItem(), "light")
   env.media.change()
   assert.equal(themes.at(-1), "light")
@@ -115,7 +127,8 @@ test("state polling preserves the open appearance control and refreshes pane dim
   for (let index = 0; index < 5; index += 1) screen.renderActionMenu()
   assert.equal(env.selects.length, 1, "polls do not recreate the select")
   assert.ok(menu.children.includes(appearance))
-  assert.ok(appearance.children.includes(select))
+  assert.ok(appearance.children.includes(select.parentElement))
+  assert.equal(select.parentElement.querySelector().textContent, "System")
   assert.equal(menu.querySelector().textContent, "Pane is 100 × 30")
 })
 

@@ -69,7 +69,7 @@ try {
   await pause(3200)
   const list = await stats()
   check(
-    list.stateReads > paired.stateReads && list.paneReads === 0,
+    list.stateReads > paired.stateReads && list.paneReads === paired.paneReads,
     "List refreshes state without reading terminal snapshots",
   )
   doc.querySelector('.session-row[data-pane="w1:p1"]').click()

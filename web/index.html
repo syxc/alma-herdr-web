@@ -76,8 +76,8 @@
           <span id="connection" class="pill">connecting</span>
         </header>
         <div class="sidebar-actions">
-          <button id="new-workspace" type="button">New workspace</button>
-          <button id="new-tab" type="button">New tab</button>
+          <button id="new-workspace" class="compact-button" type="button">New workspace</button>
+          <button id="new-tab" class="compact-button" type="button">New tab</button>
         </div>
         <div id="tree" class="tree"></div>
         <details id="remote-details" class="remote-details" open>
@@ -86,14 +86,14 @@
             <p class="hint">Register this desktop with an Alma relay, then open the pairing link on another device.</p>
             <div class="field">
               <input id="relay-url" type="url" placeholder="https://relay.example.com">
-              <button id="relay-connect" type="button">Connect</button>
+              <button id="relay-connect" class="compact-button" type="button">Connect</button>
             </div>
             <div class="field">
               <input id="relay-token" type="password" placeholder="Relay token (official relay only)">
             </div>
             <div class="field">
-              <button id="relay-disconnect" type="button">Disconnect</button>
-              <button id="relay-rotate" type="button">New code</button>
+              <button id="relay-disconnect" class="compact-button" type="button">Disconnect</button>
+              <button id="relay-rotate" class="compact-button" type="button">New code</button>
             </div>
             <div id="relay-state" class="relay-state"></div>
             <div id="relay-pair" class="relay-pair hidden">
@@ -182,14 +182,14 @@
           </header>
           <div id="pair-panel" class="pair-panel hidden">
             <input id="pair-input" type="url" placeholder="Paste a pairing link">
-            <button id="pair-scan" type="button">Scan QR</button>
-            <button id="pair-apply" type="button">Connect</button>
+            <button id="pair-scan" class="compact-button" type="button">Scan QR</button>
+            <button id="pair-apply" class="compact-button" type="button">Connect</button>
           </div>
           <div id="scan-panel" class="scan-panel hidden">
             <video id="scan-video" playsinline muted></video>
             <div class="scan-row">
               <span id="scan-status" class="scan-status"></span>
-              <button id="scan-stop" type="button">Stop</button>
+              <button id="scan-stop" class="compact-button" type="button">Stop</button>
             </div>
           </div>
           <div id="session-list" class="session-list"></div>

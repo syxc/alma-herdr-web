@@ -81,7 +81,7 @@ export class KeyToolbar {
       /* Storage is optional; the toolbar still works for this page. */
     }
     this.addButton.type = "button"
-    this.addButton.className = "key-chip keys-add"
+    this.addButton.className = "key-chip key-symbol keys-add"
     this.addButton.textContent = "+"
     this.addButton.dataset.addKeys = ""
     this.addButton.setAttribute("aria-label", "Customize extra keys")
@@ -147,7 +147,9 @@ export class KeyToolbar {
   private button(label: string, onClick: () => void, name = label): HTMLButtonElement {
     const button = document.createElement("button")
     button.type = "button"
-    button.className = "key-chip"
+    button.className = ["↑", "↓", "←", "→", "+", "⌫", String.fromCharCode(96)].includes(label)
+      ? "key-chip key-symbol"
+      : "key-chip"
     button.textContent = label
     button.setAttribute("aria-label", name)
     button.title = name

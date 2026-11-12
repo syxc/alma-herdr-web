@@ -6,7 +6,9 @@
   --controls-surface: var(--bg);
   --key-surface: var(--surface-2);
   --input-line: var(--line);
-  --radius-control: 12px;
+  --radius-control: 10px;
+  --focus-line: color-mix(in srgb, var(--line), var(--accent-text) 35%);
+  --focus-ring: color-mix(in srgb, var(--accent-text) 75%, var(--bg));
   --radius-card: 16px;
   --control-hover: color-mix(in srgb, var(--surface-2), var(--fg) 6%);
   --control-pressed: color-mix(in srgb, var(--surface-2), var(--accent-text) 14%);
@@ -80,14 +82,21 @@ select {
 .login-card .appearance-setting {
   margin-top: 20px;
 }
-.appearance-setting select {
-  appearance: none;
-  min-height: 44px;
-  width: 116px;
+.appearance-control {
+  position: relative;
+  display: grid;
+  align-items: center;
+  flex: none;
+  width: 104px;
   max-width: 60%;
+  min-height: 44px;
+}
+.appearance-control::before {
+  content: "";
+  position: absolute;
+  inset: 4px 0;
   border: 1px solid var(--line);
   border-radius: var(--radius-control);
-  padding: 6px 36px 6px 12px;
   background-color: var(--surface-2);
   background-image:
     linear-gradient(45deg, transparent 50%, var(--fg-muted) 50%),
@@ -97,16 +106,49 @@ select {
     right 13px center;
   background-size: 5px 5px;
   background-repeat: no-repeat;
+  pointer-events: none;
+}
+.appearance-value {
+  position: relative;
+  padding: 0 32px 0 12px;
   color: var(--fg);
-  font: inherit;
+  font-size: 14px;
+  pointer-events: none;
+}
+.appearance-control select {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  appearance: none;
+  border: 0;
+  border-radius: var(--radius-control);
+  outline: none;
+  background: transparent;
+  color: transparent;
   font-size: 16px;
+  cursor: pointer;
+}
+.appearance-control option {
+  color: var(--fg);
+  background: var(--surface-2);
+}
+.appearance-control:focus-within::before {
+  border-color: var(--focus-line);
+}
+.appearance-control:has(select:focus-visible)::before {
+  border-color: var(--focus-ring);
 }
 :focus-visible {
-  outline: 2px solid var(--accent-text);
-  outline-offset: 2px;
+  outline: 1px solid var(--focus-ring);
+  outline-offset: 1px;
 }
 
-* {
+*,
+*::before,
+*::after {
   box-sizing: border-box;
 }
 
@@ -144,7 +186,7 @@ button {
   padding: 8px 12px;
   cursor: pointer;
   font: inherit;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 500;
   transition:
     background-color var(--motion-fast),
@@ -165,8 +207,8 @@ button svg {
 }
 #pair-apply,
 #relay-connect {
-  border-color: transparent;
-  background: var(--accent);
+  --button-surface: var(--accent);
+  --button-line: transparent;
   color: var(--accent-ink);
 }
 #pair-apply:active:enabled,
@@ -174,8 +216,48 @@ button svg {
   filter: brightness(0.92);
 }
 button.active {
-  border-color: var(--accent-text);
+  border-color: var(--focus-line);
   color: var(--accent-text);
+}
+
+.compact-button,
+.key-chip {
+  position: relative;
+  isolation: isolate;
+  background: transparent;
+}
+.compact-button {
+  min-height: 44px;
+  padding: 4px 10px;
+  border: 0;
+}
+.compact-button::before,
+.key-chip::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: 4px 2px;
+  border: 1px solid var(--button-line, var(--line));
+  border-radius: inherit;
+  background: var(--button-surface, var(--key-surface));
+  pointer-events: none;
+  transition:
+    background-color var(--motion-fast),
+    border-color var(--motion-fast);
+}
+.compact-button:active:enabled {
+  background: transparent;
+}
+.compact-button:active:enabled::before {
+  background: color-mix(in srgb, var(--button-surface, var(--key-surface)), var(--fg) 6%);
+}
+.compact-button:focus-visible,
+.key-chip:focus-visible {
+  outline: none;
+}
+.compact-button:focus-visible::before,
+.key-chip:focus-visible::before {
+  border-color: var(--focus-ring);
 }
 
 .hidden {
@@ -241,7 +323,7 @@ button.active {
 }
 .login-form input:focus {
   outline: none;
-  border-color: var(--accent-text);
+  border-color: var(--focus-line);
 }
 
 .login-note {
@@ -749,8 +831,8 @@ button.active {
 .shortcut-bar {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 10px 13px 4px;
+  gap: 6px;
+  padding: 6px 13px 0;
 }
 .keys-add {
   width: 44px;
@@ -760,7 +842,7 @@ button.active {
   display: flex;
   flex: 1;
   min-width: 0;
-  gap: 9px;
+  gap: 6px;
   padding: 0 0 0 1px;
   overflow-x: auto;
   overscroll-behavior-x: contain;
@@ -774,30 +856,35 @@ button.active {
   display: none;
 }
 .key-chip {
+  --button-line: transparent;
   flex: none;
   min-width: 44px;
   min-height: 44px;
-  padding: 8px 12px;
-  border: 1px solid transparent;
+  padding: 4px 8px;
+  border: 0;
   border-radius: var(--radius-control);
-  background: var(--key-surface);
+  background: transparent;
   color: var(--fg-strong);
   font:
-    14px / 1 ui-monospace,
+    12px / 1 ui-monospace,
     SFMono-Regular,
     Menlo,
     Consolas,
     monospace;
   touch-action: pan-x;
 }
-.key-chip:focus-visible {
-  outline-offset: -3px;
+.key-symbol {
+  font-size: 20px;
 }
 .key-chip:active:enabled,
 .key-chip[aria-pressed="true"] {
-  border-color: var(--accent-text);
-  background: var(--selection);
+  background: transparent;
   color: var(--accent-text);
+}
+.key-chip:active:enabled::before,
+.key-chip[aria-pressed="true"]::before {
+  border-color: var(--focus-line);
+  background: var(--selection);
 }
 .key-chip:disabled,
 .input-action:disabled,
@@ -853,24 +940,26 @@ button.active {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 12px 13px calc(12px + env(safe-area-inset-bottom, 0px));
+  padding: 8px 13px calc(8px + env(safe-area-inset-bottom, 0px));
 }
 .realtime-input {
   display: flex;
   align-items: center;
   flex: 1;
   min-width: 0;
-  min-height: 50px;
+  min-height: 44px;
   border: 1px solid var(--input-line);
   border-radius: var(--radius-control);
   background: var(--bg);
 }
 .realtime-input:focus-within {
-  border-color: var(--accent-text);
-  box-shadow: 0 0 0 1px var(--accent-text);
+  border-color: var(--focus-line);
+}
+.realtime-input:has(input:focus-visible) {
+  border-color: var(--focus-ring);
 }
 .keyboard-inline {
-  --control-inset: 4px;
+  --control-inset: 6px;
   --control-surface: transparent;
   display: grid;
   place-items: center;
@@ -886,7 +975,8 @@ button.active {
 .input-copy {
   flex: 1;
   min-width: 0;
-  padding: 4px 10px 4px 0;
+  padding: 2px 8px 2px 0;
+  overflow: hidden;
 }
 .input-copy label {
   display: block;
@@ -894,13 +984,16 @@ button.active {
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--fg-strong);
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 16px;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 14px;
 }
 .command-bar input {
   display: block;
-  width: 100%;
+  /* Keep a 16px native field to prevent focus zoom, with 14px visible text. */
+  width: calc(100% / 0.875);
+  transform: scale(0.875);
+  transform-origin: left center;
   min-width: 0;
   height: 24px;
   padding: 0;
@@ -921,7 +1014,7 @@ button.active {
   opacity: 1;
 }
 .input-action {
-  --control-inset: 3px;
+  --control-inset: 6px;
   flex: none;
   display: grid;
   place-items: center;
@@ -978,13 +1071,17 @@ button.active {
   background: var(--control-pressed);
 }
 .app-bar .round-outline:focus-visible,
-.app-bar .pill-button:focus-visible {
+.app-bar .pill-button:focus-visible,
+.input-action:focus-visible,
+.keyboard-inline:focus-visible {
   outline: none;
 }
 .app-bar .round-outline:focus-visible::before,
-.app-bar .pill-button:focus-visible::before {
-  outline: 2px solid var(--accent-text);
-  outline-offset: 2px;
+.app-bar .pill-button:focus-visible::before,
+.input-action:focus-visible::before,
+.keyboard-inline:focus-visible::before {
+  outline: 1px solid var(--focus-ring);
+  outline-offset: 1px;
 }
 .input-action:focus-visible,
 .keyboard-inline:focus-visible {
@@ -1170,7 +1267,7 @@ button.active {
 }
 .remote-panel input:focus {
   outline: none;
-  border-color: var(--accent-text);
+  border-color: var(--focus-line);
 }
 .remote-state {
   font-size: 11px;
@@ -1266,7 +1363,10 @@ button.active {
 }
 .pair-panel input:focus {
   outline: none;
-  border-color: var(--accent-text);
+  border-color: var(--focus-line);
+}
+:is(.login-form, .remote-panel, .pair-panel) input:focus-visible {
+  border-color: var(--focus-ring);
 }
 
 .scan-panel {
@@ -1340,8 +1440,10 @@ button.active {
   .extra-keys label:where(:hover) {
     background-color: var(--hover);
   }
-  .key-chip:where(:hover:enabled):not([aria-pressed="true"]) {
-    background: var(--control-hover);
+  .key-chip:where(:hover:enabled):not([aria-pressed="true"])::before,
+  .compact-button:where(:hover:enabled)::before {
+    border-color: var(--line-hover);
+    background: var(--button-surface, var(--control-hover));
   }
   .app-bar .round-outline:where(:hover:enabled)::before,
   .app-bar .pill-button:where(:hover:enabled)::before,
