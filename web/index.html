@@ -163,7 +163,15 @@
                   <circle cx="18" cy="12" r="1.7" />
                 </svg>
               </button>
-              <button id="list-new" class="pill-button accent" type="button" aria-label="New terminal">
+              <button
+                id="list-new"
+                class="pill-button accent"
+                type="button"
+                aria-label="New Tab"
+                aria-expanded="false"
+                aria-controls="new-terminal-menu"
+                disabled
+              >
                 <svg
                   viewBox="0 0 24 24"
                   width="20"
@@ -179,7 +187,9 @@
               </button>
             </div>
             <div id="list-menu" class="popover hidden"></div>
+            <div id="new-terminal-menu" class="popover new-terminal-menu hidden"></div>
           </header>
+          <div id="new-tab-status" class="statusbar hidden" role="status" aria-live="polite"></div>
           <div id="pair-panel" class="pair-panel hidden">
             <input id="pair-input" type="url" placeholder="Paste a pairing link">
             <button id="pair-scan" class="compact-button" type="button">Scan QR</button>

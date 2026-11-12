@@ -45,6 +45,21 @@ test("parseAnsi understands 256 colour and true colour", () => {
   assert.equal(grid.cells[0][1].style.fg, "#0a141e")
 })
 
+test("fallback parser keeps wide glyphs, combining marks and emoji in terminal cells", () => {
+  const text = "你e\u0301👩‍💻🇨🇳Z"
+  const row = parseAnsi(text).cells[0]
+  assert.deepEqual(
+    row.map((cell) => cell.ch),
+    ["你", "", "e\u0301", "👩‍💻", "", "🇨🇳", "", "Z"],
+  )
+  assert.equal(gridToText(parseAnsi(text)), text)
+})
+
+test("fallback overwrite clears both halves of a wide glyph", () => {
+  assert.equal(gridToText(parseAnsi("你Z\rA")), "A Z")
+  assert.equal(gridToText(parseAnsi("你Z\b\bA")), " AZ")
+})
+
 test("gridToText strips trailing padding", () => {
   const grid = parseAnsi("hello   \nnext")
   assert.equal(gridToText(grid), "hello\nnext")

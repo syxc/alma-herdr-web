@@ -4,6 +4,7 @@ import {
   connectEvents,
   connectRelay,
   createTab,
+  createTerminalTab,
   createWorkspace,
   disconnectEvents,
   disconnectRelay,
@@ -27,6 +28,7 @@ import {
 import { appendAppearanceControl, initAppearance } from "./appearance.js"
 import { authStatus, signIn, signOut } from "./auth.js"
 import { DetailScreen } from "./detail.js"
+import { createAgentTerminal, type NewTabAgent, NewTerminalMenu } from "./new-terminal.js"
 import { forgetPairing, type Pairing, readPairing, readSavedPairing, savePairing } from "./pairing.js"
 import { restartAgent as runRestart } from "./restart.js"
 import { type ScannerHandle, startScanner } from "./scanner.js"
@@ -185,6 +187,8 @@ function isPhone(): boolean {
 }
 
 function showScreen(screen: "login" | "list" | "detail"): void {
+  if (screen === "login" && currentScreen !== "login") connectionGeneration += 1
+  if (screen !== "list") newTerminalMenu.close()
   currentScreen = screen
   loginScreen.classList.toggle("hidden", screen !== "login")
   app.classList.toggle("hidden", screen === "login")
@@ -314,7 +318,7 @@ const detail = new DetailScreen({
   connectionInfo,
 })
 
-async function selectPane(paneId: string): Promise<void> {
+async function selectPane(paneId: string, focusDesktop = true): Promise<void> {
   selectedPaneId = paneId
   const pane = selectedPane()
   if (pane !== null) {
@@ -328,7 +332,7 @@ async function selectPane(paneId: string): Promise<void> {
   // A desktop has a keyboard of its own, so the screen takes it right away.
   detail.focusTerminal()
   try {
-    await focusPane(paneId)
+    if (focusDesktop) await focusPane(paneId)
   } catch (error) {
     connectionFailed(error)
     return
@@ -522,12 +526,59 @@ el<HTMLButtonElement>("new-tab").addEventListener("click", () => {
   void createNewTab()
 })
 
-el<HTMLButtonElement>("list-new").addEventListener("click", () => {
-  void createNewTab()
-})
+const newTerminalMenu = new NewTerminalMenu(
+  el<HTMLButtonElement>("list-new"),
+  el<HTMLDivElement>("new-terminal-menu"),
+  {
+    snapshot: () => (pairingBusy || connectionPill.textContent !== "connected" ? null : snapshot),
+    create: createNewAgentTab,
+    beforeOpen: () => listMenu.classList.add("hidden"),
+  },
+)
+
+async function createNewAgentTab(agent: NewTabAgent, workspaceId: string): Promise<void> {
+  if (snapshot === null || pairingBusy || connectionPill.textContent !== "connected") return
+  const generation = connectionGeneration
+  const current = () => generation === connectionGeneration && currentScreen !== "login"
+  const note = el<HTMLDivElement>("new-tab-status")
+  const report = (message: string, error: boolean) => {
+    setStatus(message, error)
+    note.textContent = message
+    note.classList.toggle("error", error)
+    note.classList.toggle("hidden", message.length === 0)
+  }
+  report(`Starting ${agent.label}…`, false)
+  try {
+    const result = await createAgentTerminal(snapshot, workspaceId, agent, {
+      create: createTerminalTab,
+      start: startAgent,
+      state: fetchState,
+      current,
+      pause: (milliseconds) => new Promise((resolve) => window.setTimeout(resolve, milliseconds)),
+    })
+    if (!current()) return
+    if (result.state !== null && result.paneId !== null) {
+      await applyState(snapshot?.panes.some((pane) => pane.pane_id === result.paneId) ? snapshot : result.state, true)
+      if (!current()) return
+      await selectPane(result.paneId, false)
+    }
+    if (current()) {
+      report(result.error ?? "", result.error !== null)
+      if (result.error === null) setStatus(`Started ${agent.label}`, false)
+    }
+  } catch (error) {
+    if (current()) report(`New tab failed: ${String(error)}`, true)
+  } finally {
+    if (!current()) {
+      note.textContent = ""
+      note.classList.add("hidden")
+    }
+  }
+}
 
 const listMore = el<HTMLButtonElement>("list-more")
 listMore.addEventListener("click", () => {
+  newTerminalMenu.close()
   if (listMenu.classList.contains("hidden")) {
     renderListMenu()
     listMenu.classList.remove("hidden")
@@ -582,6 +633,7 @@ async function applyState(next: SessionSnapshot | null, connected: boolean): Pro
   el<HTMLButtonElement>("list-new").classList.toggle("hidden", !localApi && snapshot === null)
   connectionPill.textContent = connected ? "connected" : "offline"
   connectionPill.className = `pill ${connected ? "online" : "offline"}`
+  newTerminalMenu.update()
   if (snapshot !== null && !hasSelectedPane(snapshot)) {
     selectedPaneId = pickPane(snapshot)
   }
@@ -619,6 +671,7 @@ function connectionFailed(error: unknown): void {
   closeRemote()
   connectionPill.textContent = "reconnecting"
   connectionPill.className = "pill offline"
+  newTerminalMenu.update()
   remoteBanner.classList.remove("hidden")
   remoteBanner.textContent = "Connection interrupted. Reconnecting automatically…"
   if (snapshot === null) pairPanel.classList.remove("hidden")
@@ -723,6 +776,7 @@ async function applyPairing(source: string | Pairing): Promise<boolean> {
   }
   activePairing = pairing
   pairingBusy = true
+  newTerminalMenu.update()
   const generation = ++connectionGeneration
   pendingTerminal = null
   // The desktop the client leaves stops pushing its state.
@@ -761,6 +815,7 @@ async function applyPairing(source: string | Pairing): Promise<boolean> {
     return false
   } finally {
     pairingBusy = false
+    newTerminalMenu.update()
   }
 }
 
@@ -824,6 +879,10 @@ scrim.addEventListener("click", () => {
 
 window.addEventListener("keydown", (event) => {
   if (event.key === "Escape") {
+    if (newTerminalMenu.isOpen()) {
+      newTerminalMenu.close(true)
+      return
+    }
     // The first escape closes the menu that is open, the drawer comes next.
     if (!listMenu.classList.contains("hidden")) {
       listMenu.classList.add("hidden")

@@ -118,7 +118,7 @@ test("reflow preserves background, reverse and underlined spaces", () => {
 })
 
 test("visible space styles preserve word boundaries and every styled cell", () => {
-  for (const style of [{ underline: true }, { reverse: true }, { bg: "#ff0000" }]) {
+  for (const style of [{ underline: true }, { reverse: true }]) {
     const cells = [..."alpha beta gamma delta"].map(cell)
     for (const entry of cells) Object.assign(entry.style, style)
     const laid = layoutGrid({ cols: cells.length, rows: 1, cells: [cells] }, 12)
@@ -128,7 +128,7 @@ test("visible space styles preserve word boundaries and every styled cell", () =
 })
 
 test("a styled separator at the width boundary does not split the following full-width word", () => {
-  for (const style of [{ underline: true }, { reverse: true }, { bg: "#ff0000" }]) {
+  for (const style of [{ underline: true }, { reverse: true }]) {
     const cells = [..."hello world"].map(cell)
     for (const entry of cells) Object.assign(entry.style, style)
     const laid = layoutGrid({ cols: cells.length, rows: 1, cells: [cells] }, 5)
@@ -140,9 +140,159 @@ test("a styled separator at the width boundary does not split the following full
   }
 })
 
+test("a background separator does not become its own empty row at a word boundary", () => {
+  const cells = [..."hello world"].map(cell)
+  for (const entry of cells) entry.style.bg = "#373737"
+  const laid = layoutGrid({ cols: 11, rows: 1, cells: [cells] }, 5)
+  assert.deepEqual(lines(laid), ["hello", "world"])
+  assert.ok(laid.cells.flat().every((entry) => entry.style.bg === "#373737"))
+})
+
+test("Claude message background padding fills the view without creating extra rows", () => {
+  for (const message of [
+    "❯ /effort",
+    "❯ /model",
+    "❯ echo almaprobe",
+    "❯ a longer message that needs several text rows",
+  ]) {
+    const cells = [...message.padEnd(72)].map(cell)
+    for (const entry of cells) entry.style.bg = "#373737"
+    for (const width of [18, 30, 51]) {
+      const laid = layoutGrid({ cols: 72, rows: 1, cells: [cells] }, width)
+      assert.ok(
+        laid.cells.every((row) => row.some((entry) => entry.ch.trim())),
+        JSON.stringify(lines(laid)),
+      )
+      assert.ok(laid.cells.every((row) => row.length === width && row.at(-1).style.bg === "#373737"))
+      assert.equal(flat(laid), message)
+    }
+  }
+})
+
+test("a background-only source row stays one blank row", () => {
+  const cells = Array.from({ length: 72 }, () => cell(" "))
+  for (const entry of cells) entry.style.bg = "#373737"
+  const laid = layoutGrid({ cols: 72, rows: 1, cells: [cells] }, 30)
+  assert.equal(laid.rows, 1)
+  assert.equal(laid.cells[0].length, 30)
+  assert.ok(laid.cells[0].every((entry) => entry.style.bg === "#373737"))
+})
+
+test("paragraph and consecutive blank rows survive narrow reflow", () => {
+  const laid = layoutGrid(
+    screen(["First paragraph with long content", "", "", "Second paragraph with long content"]),
+    18,
+  )
+  assert.deepEqual(lines(laid), [
+    "First paragraph",
+    "with long content",
+    "",
+    "",
+    "Second paragraph",
+    "with long content",
+  ])
+})
+
+function wideScreen(rows) {
+  const cells = rows.map((line) =>
+    [...line].flatMap((ch) =>
+      /[\p{Script=Han}\u3000-\u303f\uff00-\uffef]/u.test(ch) ? [cell(ch), cell("")] : [cell(ch)],
+    ),
+  )
+  return { cols: Math.max(...cells.map((line) => line.length)), rows: rows.length, cells }
+}
+
+test("Chinese Claude paragraphs retain their marker and hanging indent", () => {
+  const laid = layoutGrid(
+    wideScreen(["⏺ 这是需要自然换行的中文说明，后面继续展示内容。", "  这里是桌面端的续行。"]),
+    22,
+  )
+  const text = lines(laid)
+  assert.ok(text[0].startsWith("⏺ 这是"), JSON.stringify(text))
+  assert.ok(
+    text.slice(1).every((line) => line.startsWith("  ")),
+    JSON.stringify(text),
+  )
+  assert.equal(text.join("").replaceAll(" ", ""), "⏺这是需要自然换行的中文说明，后面继续展示内容。这里是桌面端的续行。")
+  assert.ok(
+    text.every((line) => !/^\s*[，。！？、；：）】》]/u.test(line)),
+    JSON.stringify(text),
+  )
+})
+
+test("mixed CJK prose fills the line instead of breaking after a short English prefix", () => {
+  const laid = layoutGrid(wideScreen(["Use 中文说明应该尽量填满可用宽度，不应该在短英文后提前换行。"]), 24)
+  assert.ok(lines(laid)[0].startsWith("Use 中文说明"))
+  assert.ok(laid.cells[0].length >= 20)
+})
+
+test("code alignment and table columns are not compacted like a status bar", () => {
+  const row = "  first          second          third"
+  const laid = layoutGrid(screen([row, "x".repeat(90)]), 50)
+  assert.equal(lines(laid)[0], row)
+})
+
+test("a nested code line does not join the preceding list item", () => {
+  const laid = layoutGrid(
+    screen(["- Example of a command with arguments", "  const value = { enabled: true };", "- Next item"]),
+    25,
+  )
+  assert.ok(
+    lines(laid).some((line) => line.startsWith("  const value")),
+    JSON.stringify(lines(laid)),
+  )
+})
+
+test("fenced code rows keep their own leading indentation", () => {
+  const laid = layoutGrid(
+    screen([
+      "- Example with a code block",
+      "  ```js",
+      "  const value = {",
+      "    enabled: true,",
+      "  };",
+      "  ```",
+      "- Next item",
+    ]),
+    24,
+  )
+  assert.ok(lines(laid).includes("    enabled: true,"), JSON.stringify(lines(laid)))
+})
+
 test("a long word is still folded over several lines", () => {
   const grid = screen(["x".repeat(129)])
   const laid = layoutGrid(grid, 51)
   assert.equal(lines(laid).length, 3)
   assert.ok(laid.cells.every((row) => row.length <= 51))
+})
+
+test("deep indentation stays intact when it already fits, and cannot consume a narrow view", () => {
+  const indented = `${" ".repeat(20)}content`
+  assert.equal(lines(layoutGrid(screen([indented, "x".repeat(90)]), 40))[0], indented)
+  const narrow = layoutGrid(screen([`${" ".repeat(60)}alpha beta gamma`]), 18)
+  assert.ok(narrow.cells.every((row) => row.length <= 18 && row.some((cell) => cell.ch.trim())))
+  assert.equal(flat(narrow), "alpha beta gamma")
+})
+
+test("a bullet containing aligned code is not mistaken for a compact status row", () => {
+  const row = "● first          second          third"
+  assert.equal(lines(layoutGrid(screen([row, "x".repeat(90)]), 50))[0], row)
+})
+
+test("reflow preserves every wide glyph across phone widths and punctuation boundaries", () => {
+  const source = "⏺ 中文说明（包含括号）与 English words，保留标点。下一句话继续说明。"
+  for (const width of [12, 18, 22, 30, 40]) {
+    const laid = layoutGrid(wideScreen([source]), width)
+    const output = lines(laid)
+    assert.equal(output.join("").replaceAll(" ", ""), source.replaceAll(" ", ""))
+    assert.ok(laid.cells.every((row) => row.length <= width && row[0]?.ch !== ""))
+    assert.ok(
+      output.every((line) => !/^\s*[，。！？、；：）】》]/u.test(line)),
+      JSON.stringify(output),
+    )
+    assert.ok(
+      output.every((line) => !/[（【《]$/u.test(line)),
+      JSON.stringify(output),
+    )
+  }
 })

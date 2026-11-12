@@ -1,17 +1,5 @@
 import type { Cell, Grid } from "./ansi.js"
 
-/**
- * Lays a screen out for a view that is narrower than the screen.
- *
- * herdr renders the pane on the desktop, so the screen arrives with the
- * columns of that screen, a hundred and twenty nine of them for a normal
- * pane. A phone fits half as many at a readable size. The screen is put
- * together again for the narrow view: the lines a terminal wrapped itself
- * are joined, the text keeps the indent the terminal gave it, and the
- * result is wrapped again at the width of the view. The text keeps the size
- * it has, nothing is scaled down.
- */
-
 const EMPTY_STYLE = {
   fg: "",
   bg: "",
@@ -21,6 +9,11 @@ const EMPTY_STYLE = {
   underline: false,
   reverse: false,
 }
+const MARKER = /^(?:[⏺●•◦▪‣▸❯]|[-*+]|\d+[.)]|⎿)\s+/u
+const CJK = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u
+const NO_START = /^[，。！？、；：）】》〉」』〕〗〙〛…％,.!?;:%)\]}»”’]/u
+const NO_END = /[（【《〈「『〔〖〘〚([{«“‘]$/u
+const RULE_CHARS = new Set(["=", "-", "_", "*", "#"])
 
 function blank(): Cell {
   return { ch: " ", style: { ...EMPTY_STYLE } }
@@ -30,215 +23,198 @@ function isBlank(cell: Cell | undefined): boolean {
   return cell === undefined || (cell.ch === " " && cell.style.bg === "" && !cell.style.underline && !cell.style.reverse)
 }
 
-/**
- * A row of the screen, with the indent of its text.
- */
+function text(cells: Cell[]): string {
+  return cells.map((cell) => cell.ch).join("")
+}
+
 interface Row {
   cells: Cell[]
-  /** The blank columns in front of the text. */
   indent: number
-  /** The column where the text starts, the indent of a wrapped line. */
   hanging: number
+  structured: boolean
+  fence: string
 }
 
-/**
- * The column where the text of a row starts.
- *
- * A terminal indents the lines it wraps itself: the text of a bullet
- * starts behind the bullet, the text of a tree entry behind the branch.
- * The column of the first letter is that indent.
- */
-function textColumn(cells: Cell[], indent: number): number {
-  for (let index = indent; index < cells.length && index <= indent + 6; index += 1) {
-    const cell = cells[index]
-    if (cell === undefined) {
-      break
-    }
-    const ch = cell.ch
-    if (ch.length > 0 && /[A-Za-z0-9]/.test(ch)) {
-      return index
-    }
-  }
-  return indent
-}
-
-/**
- * The cells of a row without the blank columns at its end, with the long
- * runs of blanks inside it shortened.
- *
- * A status bar puts its parts apart with a long run of blanks, which would
- * push the last part off the screen.
- */
 function prepareRow(cells: Cell[]): Cell[] {
   let end = cells.length
-  while (end > 0 && isBlank(cells[end - 1])) {
-    end -= 1
-  }
+  while (end > 0 && isBlank(cells[end - 1])) end -= 1
   const row = cells.slice(0, end)
+  // Only a recognised status row may compact the gap between its fields.
+  // Code, tables and arbitrary prose must retain their original spaces.
+  if (!/^\s*●\s+.*(?:\$\d|\b\d+(?:ms|s|m)\b).*\s{8,}\S/u.test(text(row))) return row
   const out: Cell[] = []
-  let run = 0
+  let run: Cell[] = []
   for (const cell of row) {
     if (isBlank(cell)) {
-      run += 1
+      run.push(cell)
       continue
     }
-    if (run > 0) {
-      // The indent in front of the text stays as it is.
-      const keep = out.length === 0 ? run : run >= 8 ? 2 : run
-      for (let index = 0; index < keep; index += 1) {
-        out.push(blank())
-      }
-      run = 0
-    }
-    out.push(cell)
+    out.push(...(out.length > 0 && run.length >= 8 ? run.slice(0, 2) : run), cell)
+    run = []
   }
-  for (let index = 0; index < run; index += 1) {
-    out.push(blank())
-  }
+  out.push(...run)
   return out
 }
 
-/**
- * Wraps the cells of a text into lines of the given width.
- *
- * The first line uses the whole width, the lines after it are indented by
- * the hanging indent, the way the terminal indents the lines it wraps.
- */
-function wrap(cells: Cell[], width: number, hanging: number): Cell[][] {
+function prepare(cells: Cell[], width: number): Row {
+  let row = prepareRow(cells)
+  if (row.length > width && isRule(row)) row = row.slice(0, width)
+  let indent = 0
+  while (indent < row.length && isBlank(row[indent])) indent += 1
+  const body = text(row.slice(indent))
+  const prefix = MARKER.exec(body)?.[0] ?? ""
+  let hanging = indent
+  let prefixLength = 0
+  while (hanging < row.length && prefixLength < prefix.length) {
+    prefixLength += row[hanging]?.ch.length ?? 0
+    hanging += 1
+  }
+  const content = body.slice(prefix.length)
+  const structured =
+    /^(?:[|│┌┐└┘├┤╭╮╰╯{}[\]]|@@|---|\+\+\+|(?:const|let|var|function|class|import|export|return|def|if|else|for|while|fn|pub|func)\b)/u.test(
+      content,
+    ) || /(?:\s{2,}\S|\s[|│]\s|=>|[{};]\s*$)/u.test(content)
+  return { cells: row, indent, hanging, structured, fence: /^(`{3,}|~{3,})/u.exec(body)?.[0] ?? "" }
+}
+
+function previousGlyph(cells: Cell[], end: number): number {
+  let index = end - 1
+  while (index > 0 && cells[index]?.ch === "") index -= 1
+  return index
+}
+
+function canBreak(cells: Cell[], at: number): boolean {
+  const left = cells[previousGlyph(cells, at)]?.ch ?? ""
+  const right = cells[at]?.ch ?? ""
+  if (!left || !right || NO_START.test(right) || NO_END.test(left)) return false
+  if (/[\u00a0\u202f\u2060\ufeff]/u.test(left + right)) return false
+  return CJK.test(left) || CJK.test(right)
+}
+
+/** Wrap at word or CJK boundaries without separating a glyph from its tail cell. */
+function wrap(cells: Cell[], width: number, hanging: number, leading: number, preserveSpaces = false): Cell[][] {
+  if (cells.length <= width) return [cells]
+  let end = cells.length
+  const padding = cells[end - 1]
+  if (padding?.ch === " " && padding.style.bg && !padding.style.underline && !padding.style.reverse) {
+    while (end > 0) {
+      const cell = cells[end - 1]
+      if (cell?.ch !== " " || cell.style.bg !== padding.style.bg || cell.style.underline || cell.style.reverse) break
+      end -= 1
+    }
+    // A screen-wide fill is decoration, not more text to wrap onto empty rows.
+    const rows = end === 0 ? [[]] : wrap(cells.slice(0, end), width, hanging, leading, preserveSpaces)
+    return rows.map((row) => row.concat(Array.from({ length: width - row.length }, () => ({ ...padding }))))
+  }
   const lines: Cell[][] = []
+  // A desktop indent can consume the entire phone. Keep room for actual text.
+  const maxIndent = Math.max(0, Math.min(Math.floor(width / 3), width - 2))
+  const firstIndent = Math.min(leading, maxIndent)
+  const continuation = Math.min(hanging, maxIndent)
+  const content = cells.slice(leading)
   let start = 0
-  while (start < cells.length) {
-    // Leave room for a wide glyph even when the desktop indent is very deep.
-    const indent = lines.length === 0 ? 0 : Math.min(hanging, Math.max(0, width - 2))
+  while (start < content.length) {
+    const indent = lines.length === 0 ? firstIndent : continuation
     const limit = width - indent
-    let end = Math.min(cells.length, start + limit)
+    let end = Math.min(content.length, start + limit)
+    if (content[end]?.ch === "") end -= 1
+    if (end === start) end = Math.min(content.length, start + 2)
     let next = end
-    if (end < cells.length) {
-      // A wide glyph and its trailing column must move together.
-      if (cells[end]?.ch === "") end -= 1
-      if (end === start) end = Math.min(cells.length, start + 2)
-      next = end
-      for (let index = end; index >= start; index -= 1) {
-        const separator = cells[index]
-        if (index === start && isBlank(separator)) continue
+    if (end < content.length) {
+      for (let at = end; at >= start; at -= 1) {
+        const separator = content[at]
+        if (at === start && isBlank(separator)) continue
         if (separator?.ch === " ") {
-          if (isBlank(separator)) {
-            end = index
-            next = index + 1
+          const backgroundSeparator =
+            separator.style.bg !== "" &&
+            !separator.style.underline &&
+            !separator.style.reverse &&
+            separator.style.bg === content[at - 1]?.style.bg &&
+            separator.style.bg === content[at + 1]?.style.bg
+          if ((isBlank(separator) || backgroundSeparator) && !preserveSpaces) {
+            end = at
+            next = at + 1
           } else {
-            // Keep a visible separator on either side of the word boundary.
-            end = index < start + limit ? index + 1 : index
+            // Styled blanks are visible content, including at the right edge.
+            end = at < end ? at + 1 : at
             next = end
           }
           break
         }
+        if (at > start && canBreak(content, at)) {
+          end = at
+          next = at
+          break
+        }
       }
     }
-    const padding = Array.from({ length: indent }, blank)
-    lines.push(padding.concat(cells.slice(start, end)))
+    lines.push(Array.from({ length: indent }, blank).concat(content.slice(start, end)))
     start = next
   }
-  return lines
+  return lines.length > 0 ? lines : [cells]
 }
 
-/**
- * The characters a program draws a line with.
- */
-const RULE_CHARS = new Set(["=", "-", "_", "*", "#"])
-
-function isRuleCharacter(ch: string): boolean {
-  const point = ch.codePointAt(0)
-  if (point === undefined) {
-    return false
-  }
-  // The box drawing characters, the lines of a tree or a table.
-  if (point >= 0x2500 && point <= 0x257f) {
-    return true
-  }
-  return RULE_CHARS.has(ch)
-}
-
-/**
- * A row that is one character repeated, the line a program draws to divide
- * the screen.
- *
- * A terminal wraps such a line, but the program that drew it would have
- * drawn it again for the narrower screen, so the line is cut to the width of
- * the view instead of being folded into several lines.
- */
 function isRule(cells: Cell[]): boolean {
   let mark = ""
   for (const cell of cells) {
-    if (isBlank(cell)) {
-      continue
-    }
-    if (mark === "") {
-      mark = cell.ch
-      continue
-    }
-    if (cell.ch !== mark) {
-      return false
-    }
+    if (isBlank(cell)) continue
+    if (mark === "") mark = cell.ch
+    else if (cell.ch !== mark) return false
   }
-  return mark.length > 0 && isRuleCharacter(mark)
+  const point = mark.codePointAt(0) ?? 0
+  return (point >= 0x2500 && point <= 0x257f) || RULE_CHARS.has(mark)
 }
 
-/**
- * Lays the screen out for a view of the given width.
- *
- * A screen that fits stays as it is.
- */
+/** Reflow recognised prose continuations; snapshots do not carry soft-wrap flags. */
 export function layoutGrid(grid: Grid, width: number): Grid {
-  if (width <= 0 || grid.cols <= width) {
-    return grid
-  }
-
-  const rows: Row[] = grid.cells.map((cells) => {
-    let prepared = prepareRow(cells)
-    if (prepared.length > width && isRule(prepared)) {
-      prepared = prepared.slice(0, width)
-    }
-    let indent = 0
-    while (indent < prepared.length && isBlank(prepared[indent])) {
-      indent += 1
-    }
-    return {
-      cells: prepared,
-      indent,
-      hanging: textColumn(prepared, indent),
-    }
-  })
-
+  if (width <= 0 || grid.cols <= width) return grid
+  width = Math.max(1, Math.floor(width))
+  const rows = grid.cells.map((cells) => prepare(cells, width))
   const out: Cell[][] = []
   let current: Cell[] = []
   let hanging = 0
   let base = 0
-
+  let joins = false
+  let fence = ""
   const flush = (): void => {
-    if (current.length === 0) {
-      return
-    }
-    for (const line of wrap(current, width, hanging)) {
-      out.push(line)
-    }
+    if (current.length === 0) return
+    out.push(...wrap(current, width, hanging, base))
     current = []
   }
-
   for (const row of rows) {
-    // A line the terminal wrapped itself is indented deeper than the text
-    // it belongs to, and it starts at the column the text of that line
-    // starts at.
-    const continues = current.length > 0 && row.cells.length > 0 && row.indent > base && row.indent === hanging
+    if (row.cells.length === 0) {
+      flush()
+      out.push([])
+      joins = false
+      continue
+    }
+    if (row.fence || fence || row.structured) {
+      flush()
+      out.push(...wrap(row.cells, width, row.indent, row.indent, true))
+      if (row.fence) {
+        if (!fence) fence = row.fence
+        else if (row.fence[0] === fence[0] && row.fence.length >= fence.length) fence = ""
+      }
+      joins = false
+      continue
+    }
+    const continues = joins && row.indent > base && row.indent === hanging && row.hanging === row.indent
     if (continues) {
-      current.push(blank(), ...row.cells.slice(row.indent))
+      const rest = row.cells.slice(row.indent)
+      const left = current[previousGlyph(current, current.length)]?.ch ?? ""
+      const right = rest[0]?.ch ?? ""
+      // CJK source rows have no word separator; do not invent spaces in a sentence.
+      const cjkJoin = (CJK.test(left) || /[，。！？、；：）】》」』]/u.test(left)) && CJK.test(right)
+      if (!cjkJoin && !NO_START.test(right) && !NO_END.test(left)) current.push(blank())
+      current.push(...rest)
       continue
     }
     flush()
     current = row.cells.slice()
     hanging = row.hanging
     base = row.indent
+    joins = hanging > base
   }
   flush()
-
   return { cols: width, rows: out.length, cells: out }
 }

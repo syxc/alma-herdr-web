@@ -218,6 +218,39 @@ function inputFixture(t) {
   }
 }
 
+test("IME compositionend sends committed text even without a final input event", (t) => {
+  const f = inputFixture(t)
+  f.field.dispatchEvent(new Event("compositionstart"))
+  f.field.value = "我问问"
+  const composing = new Event("input")
+  Object.assign(composing, { isComposing: true })
+  f.field.dispatchEvent(composing)
+  f.tick()
+  assert.deepEqual(f.sent, [])
+  f.field.dispatchEvent(new Event("compositionend"))
+  f.tick()
+  assert.deepEqual(f.sent, [["A", "text", "我问问"]])
+  f.field.dispatchEvent(new Event("input"))
+  f.tick()
+  assert.deepEqual(f.sent, [["A", "text", "我问问"]])
+  f.press("Backspace")
+  f.press("Enter")
+  f.tick()
+  assert.deepEqual(f.sent, [
+    ["A", "text", "我问问"],
+    ["A", "keys", ["backspace", "enter"]],
+  ])
+})
+
+test("compositionend cannot send into a disabled pane", (t) => {
+  const f = inputFixture(t)
+  f.input.setEnabled(false)
+  f.field.value = "中文"
+  f.field.dispatchEvent(new Event("compositionend"))
+  f.tick()
+  assert.deepEqual(f.sent, [])
+})
+
 test("line edits erase Unicode characters instead of UTF-16 code units", () => {
   assert.deepEqual(lineEdit("a😀", 3, "a", 1), { backspaces: 1, killToEnd: false, text: "" })
 })

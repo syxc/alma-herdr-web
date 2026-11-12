@@ -1,7 +1,8 @@
 import { type Cell, type Grid, parseAnsi } from "./ansi.js"
 import { IconFontLoader } from "./icon-font.js"
 import { layoutGrid } from "./layout.js"
-import { cellColors, TERMINAL_COLORS, type Theme } from "./terminal-theme.js"
+import { paintTerminal } from "./terminal-painter.js"
+import { TERMINAL_COLORS, type Theme } from "./terminal-theme.js"
 import { TerminalKernel } from "./vt.js"
 
 export type FitMode = "wrap" | "original" | "shrink"
@@ -20,6 +21,7 @@ export class TerminalView {
   private readonly canvas: HTMLCanvasElement
   private readonly context: CanvasRenderingContext2D
   private readonly host: HTMLElement | null
+  private readonly surface: HTMLDivElement | null
   private readonly kernel = new TerminalKernel()
   private readonly iconFonts = new IconFontLoader(() => this.render())
   private rows: Cell[][] = []
@@ -32,7 +34,6 @@ export class TerminalView {
   private cellHeight = 16
   private rowHeight = 16
   private theme: Theme = "dark"
-  private background = TERMINAL_COLORS.dark.background
   private mode: FitMode = "wrap"
   private observer: ResizeObserver | null = null
   // Pause auto-follow while the reader is above the latest output.
@@ -42,6 +43,8 @@ export class TerminalView {
   private anchorText = ""
   private anchorIndex = 0
   private anchorOffset = 0
+  private anchorSource: { text: string; row: number; column: number } | null = null
+  private programmaticTop: number | null = null
   private snapTimer: number | null = null
   private text: string | null = null
   private contentRows = 0
@@ -62,6 +65,13 @@ export class TerminalView {
     // The columns that fit depend on the width of the view, so the view is
     // the thing to observe.
     this.host = canvas.parentElement
+    this.surface = this.host === null ? null : document.createElement("div")
+    if (this.surface !== null) {
+      canvas.before(this.surface)
+      this.surface.append(canvas)
+      canvas.style.position = "sticky"
+      canvas.style.top = "0"
+    }
     if (this.host !== null) {
       this.host.addEventListener("scroll", () => this.handleScroll())
     }
@@ -117,7 +127,6 @@ export class TerminalView {
     this.captureAnchor()
     this.theme = theme
     const colors = TERMINAL_COLORS[theme]
-    this.background = colors.background
     this.kernel.setColors(colors)
     this.revision += 1
     this.usingKernel = false
@@ -184,6 +193,7 @@ export class TerminalView {
   followBottom(): void {
     this.follow = true
     this.anchorText = ""
+    this.anchorSource = null
     const host = this.host
     if (host !== null) {
       host.scrollTop = host.scrollHeight
@@ -191,7 +201,7 @@ export class TerminalView {
   }
 
   private captureAnchor(): void {
-    if (this.follow) {
+    if (this.follow || this.anchorSource !== null) {
       return
     }
     const top = Math.min(this.topRow, Math.max(0, this.laidOut.length - 1))
@@ -201,14 +211,44 @@ export class TerminalView {
         this.anchorText = text
         this.anchorIndex = index
         this.anchorOffset = top - index
+        this.anchorSource = null
+        const target = this.laidOut[index]?.find((cell) => cell.ch.trim().length > 0)
+        if (target !== undefined) {
+          for (let row = 0; row < this.rows.length; row += 1) {
+            const cells = this.rows[row] ?? []
+            const column = cells.indexOf(target)
+            if (column < 0) continue
+            this.anchorSource = { text: rowText(cells), row, column }
+            break
+          }
+        }
         return
       }
     }
     this.anchorText = ""
     this.anchorOffset = 0
+    this.anchorSource = null
   }
 
   private restoreAnchor(): void {
+    const source = this.anchorSource
+    if (source !== null) {
+      let nearest = -1
+      for (let row = 0; row < this.rows.length; row += 1) {
+        if (rowText(this.rows[row] ?? []) !== source.text) continue
+        if (nearest < 0 || Math.abs(row - source.row) < Math.abs(nearest - source.row)) nearest = row
+      }
+      const cell = this.rows[nearest]?.[source.column]
+      if (cell !== undefined) {
+        const row = this.laidOut.findIndex((cells) => cells.includes(cell))
+        if (row >= 0) {
+          source.row = nearest
+          this.scrollToRow(row + this.anchorOffset)
+          return
+        }
+      }
+      this.anchorSource = null
+    }
     if (this.anchorText.length === 0) {
       return
     }
@@ -233,7 +273,8 @@ export class TerminalView {
       return
     }
     host.scrollTop = row * this.rowHeight
-    this.topRow = row
+    this.programmaticTop = host.scrollTop
+    this.topRow = Math.round(host.scrollTop / this.rowHeight)
   }
 
   private visibleRows(): number {
@@ -249,8 +290,14 @@ export class TerminalView {
     if (host === null) {
       return
     }
+    const restored = this.programmaticTop !== null && Math.abs(host.scrollTop - this.programmaticTop) < 0.5
+    if (!restored) {
+      this.anchorSource = null
+      this.programmaticTop = null
+    }
     this.topRow = Math.round(host.scrollTop / this.rowHeight)
     this.follow = this.topRow + this.visibleRows() >= this.laidOut.length - 1
+    this.paint()
     if (this.snapTimer !== null) {
       window.clearTimeout(this.snapTimer)
     }
@@ -271,6 +318,7 @@ export class TerminalView {
       return
     }
     host.scrollTop = target
+    this.programmaticTop = host.scrollTop
   }
 
   render(): void {
@@ -311,10 +359,8 @@ export class TerminalView {
     // so. The other modes keep the size of the text.
     const scale = this.mode === "shrink" && contentWidth > 0 ? Math.min(1, usable / contentWidth) : 1
 
-    // The canvas covers the view and grows with the content, so the view
-    // scrolls down when the screen is taller than it. A little room is added
-    // below the last line, so the view scrolls to a whole line and never
-    // shows half a line at the top.
+    // The surface carries the scroll range; the canvas only covers the viewport.
+    // Pad the surface so the last scroll position lands on a whole row.
     const lineHeight = this.cellHeight * scale
     this.rowHeight = lineHeight
     const content = contentHeight * scale
@@ -324,7 +370,11 @@ export class TerminalView {
       canvasHeight = content + pad
     }
     this.canvas.style.width = `${this.mode === "shrink" ? viewWidth : Math.max(viewWidth, inset + contentWidth + inset)}px`
-    this.canvas.style.height = `${canvasHeight}px`
+    this.canvas.style.height = `${host === null ? canvasHeight : Math.max(1, viewHeight)}px`
+    if (this.surface !== null) {
+      this.surface.style.width = this.canvas.style.width
+      this.surface.style.height = `${canvasHeight}px`
+    }
     this.syncSize()
 
     if (host !== null) {
@@ -337,84 +387,22 @@ export class TerminalView {
       }
     }
 
-    const rect = this.canvas.getBoundingClientRect()
-    ctx.setTransform(ratio, 0, 0, ratio, 0, 0)
-    ctx.globalAlpha = 1
-    ctx.fillStyle = this.background
-    ctx.fillRect(0, 0, rect.width, rect.height)
+    this.paint()
+  }
 
-    ctx.setTransform(ratio * scale, 0, 0, ratio * scale, 0, 0)
-    // The margin of the screen is kept in CSS pixels, the text inside it
-    // is the thing that gets scaled.
-    ctx.translate(inset / scale, 0)
-    const rows = this.laidOut.length
-    const cols = this.layoutCols
-    if (rows === 0 || cols === 0) {
-      return
-    }
-
-    const colorCache = new Map<string, ReturnType<typeof cellColors>>()
-    const colorsFor = (style: Cell["style"]) => {
-      const key = `${style.fg};${style.bg};${style.reverse}`
-      let colors = colorCache.get(key)
-      if (colors === undefined) {
-        colors = cellColors(style, this.theme)
-        colorCache.set(key, colors)
-      }
-      return colors
-    }
-
-    // Paint backgrounds first so the trailing cell never erases a wide glyph.
-    for (let row = 0; row < rows; row += 1) {
-      const line = this.laidOut[row] ?? []
-      let start = 0
-      let background = ""
-      // Fractional cell widths create seams when one solid fill is painted cell by cell.
-      for (let column = 0; column <= line.length; column += 1) {
-        const style = line[column]?.style
-        const next = style === undefined ? "" : colorsFor(style).background
-        if (next === background) continue
-        if (background.length > 0) {
-          ctx.fillStyle = background
-          ctx.fillRect(
-            start * this.cellWidth,
-            row * this.cellHeight,
-            (column - start) * this.cellWidth,
-            this.cellHeight,
-          )
-        }
-        start = column
-        background = next
-      }
-    }
-    let font = ""
-    for (let row = 0; row < rows; row += 1) {
-      const line = this.laidOut[row] ?? []
-      for (let column = 0; column < line.length; column += 1) {
-        const cell = line[column]
-        if (cell === undefined) {
-          continue
-        }
-        const x = column * this.cellWidth
-        const y = row * this.cellHeight
-        const style = cell.style
-        const foreground = colorsFor(style).foreground
-        if (cell.ch.length === 0) continue
-        ctx.globalAlpha = style.dim ? 0.6 : 1
-        ctx.fillStyle = foreground
-        const nextFont = `${(style.bold ? "bold " : "") + (style.italic ? "italic " : "") + this.fontSize}px ${this.fontFamily}`
-        if (font !== nextFont) {
-          ctx.font = nextFont
-          font = nextFont
-        }
-        if (cell.ch !== " ") ctx.fillText(cell.ch, x, y + this.fontSize)
-        if (style.underline) {
-          const width = line[column + 1]?.ch === "" ? this.cellWidth * 2 : this.cellWidth
-          ctx.fillRect(x, y + this.fontSize + 1, width, 1)
-        }
-      }
-    }
-    ctx.globalAlpha = 1
+  private paint(): void {
+    const contentWidth = this.layoutCols * this.cellWidth
+    const scale = this.mode === "shrink" && contentWidth > 0 ? Math.min(1, this.layoutWidth / contentWidth) : 1
+    paintTerminal(this.canvas, this.context, this.laidOut, {
+      scale,
+      inset: this.host === null ? 0 : SCREEN_INSET,
+      scrollTop: this.host?.scrollTop ?? 0,
+      cellWidth: this.cellWidth,
+      cellHeight: this.cellHeight,
+      fontSize: this.fontSize,
+      fontFamily: this.fontFamily,
+      theme: this.theme,
+    })
   }
 
   size(): { cols: number; rows: number } {

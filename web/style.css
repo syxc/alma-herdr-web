@@ -680,6 +680,11 @@ button.active {
   box-shadow: 0 8px 24px var(--popover-shadow);
 }
 
+.new-terminal-menu {
+  left: auto;
+  right: 12px;
+}
+
 .popover-item {
   display: flex;
   align-items: center;

@@ -77,3 +77,14 @@ test("the screen is emptied before the new content is written", async () => {
   assert.equal(screen.rows.length, 1)
   assert.equal(screen.rows[0]?.map((cell) => cell.ch).join(""), "only")
 })
+
+test("snapshot replay keeps joined emoji and flags in one wide grapheme", async () => {
+  const kernel = await openKernel()
+  for (const glyph of ["👩‍💻", "🇨🇳", "1️⃣"]) {
+    const row = kernel.setContent(`${glyph}Z`, 5).rows[0]
+    assert.deepEqual(
+      row.map((cell) => cell.ch),
+      [glyph, "", "Z"],
+    )
+  }
+})

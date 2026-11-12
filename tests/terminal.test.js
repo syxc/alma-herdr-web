@@ -8,7 +8,7 @@ import { TerminalKernel } from "../web/dist/vt.js"
 const bytes = await readFile(new URL("../web/vendor/ghostty/ghostty-vt.wasm", import.meta.url))
 const settle = () => new Promise((resolve) => setImmediate(resolve))
 
-function environment(t, response = Promise.resolve(new Response(bytes))) {
+function environment(t, response = Promise.resolve(new Response(bytes)), host = null) {
   for (const name of ["window", "document", "fetch"]) {
     const descriptor = Object.getOwnPropertyDescriptor(globalThis, name)
     t.after(() => {
@@ -17,7 +17,15 @@ function environment(t, response = Promise.resolve(new Response(bytes))) {
     })
   }
   globalThis.window = { devicePixelRatio: 1, setTimeout, clearTimeout }
-  globalThis.document = { fonts: new Set() }
+  globalThis.document = {
+    fonts: new Set(),
+    createElement: () => ({
+      style: {},
+      append() {
+        if (host !== null) host.surface = this
+      },
+    }),
+  }
   globalThis.fetch = () => response
   const operations = []
   const context = {
@@ -33,14 +41,18 @@ function environment(t, response = Promise.resolve(new Response(bytes))) {
     },
   }
   const canvas = {
-    parentElement: null,
+    parentElement: host,
     style: {},
     width: 300,
     height: 100,
+    before() {},
     getContext: () => context,
-    getBoundingClientRect: () => ({ width: 300, height: 100 }),
+    getBoundingClientRect: () => ({
+      width: host === null ? 300 : Number.parseFloat(canvas.style.width ?? "300"),
+      height: host === null ? 100 : Number.parseFloat(canvas.style.height ?? "100"),
+    }),
   }
-  return { view: new TerminalView(canvas), operations }
+  return { view: new TerminalView(canvas), operations, canvas }
 }
 
 async function ready(view) {
@@ -235,4 +247,76 @@ test("a failed WASM download can recover after the bounded retry delay", async (
   now += 5000
   assert.equal(await kernel.load(), true)
   assert.equal(attempts, 2)
+})
+
+function scrollHost() {
+  let scrollTop = 0
+  return {
+    clientWidth: 390,
+    clientHeight: 190,
+    get scrollTop() {
+      return scrollTop
+    },
+    set scrollTop(value) {
+      scrollTop = Math.max(0, Math.min(value, this.scrollHeight - this.clientHeight))
+    },
+    scrollLeft: 0,
+    get scrollHeight() {
+      return Number.parseFloat(this.surface?.style.height ?? "0")
+    },
+    classList: { toggle() {} },
+    addEventListener() {},
+  }
+}
+
+const readingContent = Array.from(
+  { length: 50 },
+  (_, i) => `Record ${i}: alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron.`,
+).join("\n")
+
+test("width and mode changes keep the source character being read in view", async (t) => {
+  const host = scrollHost()
+  const { view } = environment(t, Promise.resolve(new Response(bytes)), host)
+  t.after(() => clearTimeout(view.snapTimer))
+  await ready(view)
+  await view.setContent(readingContent, 24)
+  host.scrollTop = 20 * view.rowHeight
+  view.handleScroll()
+  const target = view.laidOut[20].find((c) => c.ch.trim())
+  for (const width of [320, 600, 390]) {
+    host.clientWidth = width
+    view.resize()
+    const top = Math.round(host.scrollTop / view.rowHeight)
+    assert.ok(view.laidOut[top].includes(target), `${width}px: resizing keeps the same source character at the top`)
+  }
+  view.setMode("original")
+  const top = Math.round(host.scrollTop / view.rowHeight)
+  assert.ok(view.laidOut[top].includes(target), "Original Width keeps the same source character at the top")
+})
+
+test("long snapshots paint only visible rows and repaint on reader scrolling", async (t) => {
+  const host = scrollHost()
+  const { view, canvas, operations } = environment(t, Promise.resolve(new Response(bytes)), host)
+  t.after(() => clearTimeout(view.snapTimer))
+  await ready(view)
+  await view.setContent(readingContent, 24)
+  assert.equal(canvas.height, host.clientHeight)
+  assert.ok(host.scrollHeight > host.clientHeight * 10)
+  operations.length = 0
+  host.scrollTop = 20 * view.rowHeight
+  view.handleScroll()
+  const draws = operations.filter((op) => op.kind === "text")
+  assert.ok(draws.length > 0)
+  assert.ok(draws.length < 10 * view.layoutCols, "the full history is not repainted on scroll")
+  assert.ok(draws.every((op) => op.y >= 0 && op.y <= host.clientHeight + view.cellHeight))
+  assert.equal(
+    draws
+      .filter((op) => op.y === view.fontSize)
+      .map((op) => op.text)
+      .join(""),
+    view.laidOut[20]
+      .map((cell) => cell.ch)
+      .join("")
+      .replaceAll(" ", ""),
+  )
 })

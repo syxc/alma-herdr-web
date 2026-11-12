@@ -209,7 +209,8 @@ export class GhosttyKernel {
     // The screen and the scrollback are emptied first, so the terminal holds
     // exactly what was read this time. Lines that do not fit on the screen
     // end up in the scrollback, which is where the older lines belong.
-    this.write("\u001b[0m\u001b[3J\u001b[2J\u001b[H")
+    // Snapshots contain complete Unicode graphemes, including ZWJ emoji and flags.
+    this.write("\u001b[?2027h\u001b[0m\u001b[3J\u001b[2J\u001b[H")
     this.resize(cols, rows)
     this.write(lines.join("\r\n"))
 

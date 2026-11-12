@@ -31,6 +31,30 @@ export interface Grid {
 }
 
 const BASE_COLORS = TERMINAL_COLORS.dark.palette
+const GRAPHEMES = new Intl.Segmenter(undefined, { granularity: "grapheme" })
+
+// The fallback only handles rendered SGR snapshots. Ghostty remains the main VT.
+function glyphWidth(ch: string): number {
+  if (/^(?:\p{Mark}|[\u200b-\u200f\u2060])+$/u.test(ch)) return 0
+  const point = ch.codePointAt(0) ?? 0
+  const wide =
+    point >= 0x1100 &&
+    (point <= 0x115f ||
+      point === 0x2329 ||
+      point === 0x232a ||
+      (point >= 0x2e80 && point <= 0xa4cf && point !== 0x303f) ||
+      (point >= 0xac00 && point <= 0xd7a3) ||
+      (point >= 0xf900 && point <= 0xfaff) ||
+      (point >= 0xfe10 && point <= 0xfe19) ||
+      (point >= 0xfe30 && point <= 0xfe6f) ||
+      (point >= 0xff00 && point <= 0xff60) ||
+      (point >= 0xffe0 && point <= 0xffe6) ||
+      (point >= 0x20000 && point <= 0x3fffd))
+  return wide ||
+    (!ch.includes("\ufe0e") && (/\p{Emoji_Presentation}/u.test(ch) || ch.includes("\ufe0f") || ch.includes("\u20e3")))
+    ? 2
+    : 1
+}
 
 function defaultStyle(): CellStyle {
   return {
@@ -161,7 +185,7 @@ export function parseAnsi(text: string, palette: readonly string[] = BASE_COLORS
     column = 0
   }
 
-  const put = (ch: string): void => {
+  const putCell = (ch: string): void => {
     if (column < row.length) {
       // Carriage return or backspace moved the cursor onto an existing cell.
       row[column] = { ch, style: { ...style } }
@@ -172,6 +196,25 @@ export function parseAnsi(text: string, palette: readonly string[] = BASE_COLORS
       row.push({ ch, style: { ...style } })
     }
     column += 1
+  }
+
+  const clearGlyph = (at: number): void => {
+    if (row[at]?.ch === "" && at > 0) row[at - 1] = { ch: " ", style: defaultStyle() }
+    if (row[at + 1]?.ch === "") row[at + 1] = { ch: " ", style: defaultStyle() }
+  }
+  const put = (ch: string): void => {
+    const width = glyphWidth(ch)
+    if (width === 0) {
+      let previous = column - 1
+      if (row[previous]?.ch === "") previous -= 1
+      const cell = row[previous]
+      if (cell !== undefined) cell.ch += ch
+      return
+    }
+    clearGlyph(column)
+    if (width === 2) clearGlyph(column + 1)
+    putCell(ch)
+    if (width === 2) putCell("")
   }
 
   let index = 0
@@ -216,8 +259,14 @@ export function parseAnsi(text: string, palette: readonly string[] = BASE_COLORS
       index += 1
       continue
     }
-    put(ch)
-    index += 1
+    if (ch.charCodeAt(0) < 0x20 || ch === "\u007f") {
+      index += 1
+      continue
+    }
+    let end = index + 1
+    while (end < text.length && text.charCodeAt(end) >= 0x20 && text.charCodeAt(end) !== 0x7f) end += 1
+    for (const { segment } of GRAPHEMES.segment(text.slice(index, end))) put(segment)
+    index = end
   }
   rows.push(row)
 

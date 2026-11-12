@@ -88,6 +88,68 @@ try {
     paints === before,
     `100 unchanged snapshots cause zero redraws (${(performance.now() - started).toFixed(2)} ms)`,
   )
+  for (const width of [320, 390]) {
+    host.style.width = `${width}px`
+    view.resize()
+    for (const theme of ["dark", "light"]) {
+      await view.setTheme(theme)
+      await view.setContent(
+        ["❯ /effort", "❯ /model", "❯ echo almaprobe"]
+          .map((message) => `\x1b[48;2;55;55;55m${message.padEnd(72)}\x1b[0m`)
+          .join("\n"),
+        3,
+      )
+      const filled = view.laidOut.filter((row) => row.some((cell) => cell.style.bg))
+      check(
+        filled.length === 3 && filled.every((row) => row.some((cell) => cell.ch.trim())),
+        `${width}px ${theme}: message fills stay on their text rows`,
+      )
+    }
+  }
+  const readingSample = [
+    "⏺ 这是 Claude Code 风格的长段落：中文和 English words 应该自然换行，标点留在句子里。",
+    "  桌面端续行在手机上重新排版，保留正文缩进，不把项目符号单独挤成一行。",
+    "",
+    "- Mixed text: 手机窄屏仍保持正常字号，words remain complete and readable.",
+    "",
+    "  const columns = [",
+    "    first:          1,",
+    "    second:         2,",
+    "  ];",
+    "",
+    "⏺ Unicode: 你好 e\u0301 👩‍💻 🇨🇳 — done.",
+  ].join("\n")
+  for (const width of [320, 390, 768, 1024]) {
+    host.style.width = `${width}px`
+    view.resize()
+    for (const theme of ["dark", "light"]) {
+      await view.setTheme(theme)
+      await view.setContent(readingSample, 24)
+      await pause(50)
+      const rows = view.laidOut.map((row) => row.map((cell) => cell.ch).join(""))
+      check(host.scrollWidth <= host.clientWidth, `${width}px ${theme}: no horizontal overflow`)
+      check(rows.filter((row) => row.trim() === "").length === 3, `${width}px ${theme}: paragraph gaps survive`)
+      check(rows[0].startsWith("⏺ 这是"), `${width}px ${theme}: marker stays beside Chinese text`)
+      check(
+        rows.some((row) => row.includes("first:          1,")),
+        `${width}px ${theme}: code alignment survives`,
+      )
+      check(
+        !rows.some((row) => /^\s*[，。！？、；：）】》]/u.test(row)),
+        `${width}px ${theme}: punctuation does not lead a row`,
+      )
+    }
+  }
+  check(
+    view.rows.some((row) => row.some((cell) => cell.ch === "👩‍💻")),
+    "Kernel keeps the joined programmer emoji in one cell",
+  )
+  check(
+    view.rows.some((row) => row.some((cell) => cell.ch === "🇨🇳")),
+    "Kernel keeps a flag in one cell",
+  )
+  host.style.width = "390px"
+  view.resize()
   const long = Array.from(
     { length: 80 },
     (_, index) => `row ${index}${" normal-size Chinese 中文 and long text ".repeat(3)}`,
@@ -104,8 +166,21 @@ try {
   await view.setContent(`${long}\nnew output`, 24)
   await pause(80)
   check(Math.abs(host.scrollTop - anchor) < 1, "New output preserves the reading anchor")
+  const readingRow = Math.round(host.scrollTop / view.rowHeight)
+  const readingCell = view.laidOut[readingRow].find((cell) => cell.ch.trim())
+  for (const width of [320, 600, 390]) {
+    host.style.width = `${width}px`
+    view.resize()
+    await pause(180)
+    const top = Math.round(host.scrollTop / view.rowHeight)
+    check(view.laidOut[top].includes(readingCell), `${width}px: resizing retains the source character being read`)
+  }
   view.setMode("original")
   check(host.scrollWidth > host.clientWidth, "Original Width retains horizontal scrolling")
+  check(
+    view.laidOut[Math.round(host.scrollTop / view.rowHeight)].includes(readingCell),
+    "Mode change retains the source character being read",
+  )
   view.setMode("shrink")
   await pause(180)
   check(host.scrollWidth <= host.clientWidth, "Shrink to Fit stays within the phone width")
@@ -120,7 +195,47 @@ try {
   )
   view.setMode("wrap")
   await view.setTheme("light")
-  await view.setContent(text, 10)
+  const stress = Array.from(
+    { length: 120 },
+    (_, index) => `Record ${index}: ${"Long content 中文阅读内容 and ordinary words. ".repeat(8)}`,
+  ).join("\n")
+  host.style.width = "320px"
+  view.resize()
+  const stressStart = performance.now()
+  await view.setContent(stress, 24)
+  await pause(180)
+  check(pixel(1, 1) === "255,255,255", "Long snapshot retains a readable canvas backing store")
+  const visiblePixels = ctx.getImageData(0, 0, canvas.width, canvas.height).data
+  check(
+    visiblePixels.some((value, index) => index % 4 !== 3 && value < 240),
+    "Long snapshot paints text at the bottom, not just a blank surface",
+  )
+  check(
+    canvas.height <= Math.ceil(host.clientHeight * devicePixelRatio),
+    "Long snapshot bounds the backing store to the viewport",
+  )
+  check(
+    Math.abs(host.scrollHeight - host.clientHeight - host.scrollTop) < 1,
+    "Long snapshot follows the actual last row",
+  )
+  lines.push(
+    "INFO Long snapshot: " +
+      view.laidOut.length +
+      " rows, canvas " +
+      canvas.width +
+      "×" +
+      canvas.height +
+      ", " +
+      (performance.now() - stressStart).toFixed(1) +
+      " ms including scroll settle",
+  )
+  host.style.width = "390px"
+  host.style.height = "360px"
+  view.resize()
+  await view.setContent(readingSample, 24)
+  host.scrollTop = 0
+  await pause(180)
+  result.textContent = lines.join("\n")
   result.textContent += "\n\nALL CHECKS PASSED"
   document.title = "PASS — Terminal browser checks"
 } catch (error) {

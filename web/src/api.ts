@@ -185,6 +185,7 @@ interface AlmaCall {
   ok: boolean
   result: Record<string, unknown>
   error?: string
+  code?: string
 }
 
 async function almaCall(tunnel: AlmaTunnel, method: string, params: Record<string, unknown>): Promise<AlmaCall> {
@@ -205,6 +206,7 @@ async function almaCall(tunnel: AlmaTunnel, method: string, params: Record<strin
       ok: false,
       result: {},
       error: String(error?.message ?? "the Alma desktop refused the request"),
+      code: typeof error?.code === "string" ? error.code : "",
     }
   }
   return { ok: true, result: (parsed.result ?? {}) as Record<string, unknown> }
@@ -390,7 +392,7 @@ function enqueue<T>(task: () => Promise<T>): Promise<T> {
 async function command(method: string, path: string, params: Record<string, unknown>): Promise<ApiResult> {
   if (backend.kind === "alma") {
     // Both create endpoints default to focus=true on the local agent.
-    if (method === "workspace.create" || method === "tab.create") params = { ...params, focus: true }
+    if (method === "workspace.create" || method === "tab.create") params = { focus: true, ...params }
     return almaCall(backend.tunnel, method, params)
   }
   return call(path, {
@@ -446,6 +448,33 @@ export async function createWorkspace(cwd: string, label: string): Promise<strin
 export async function createTab(workspaceId: string, cwd: string, label: string): Promise<string | null> {
   const result = await command("tab.create", "/api/tab/create", { workspace_id: workspaceId, cwd, label })
   return result.ok ? null : (result.error ?? "create failed")
+}
+
+export interface CreatedTerminal {
+  paneId: string | null
+  error: string | null
+}
+
+export async function createTerminalTab(workspaceId: string, cwd: string | null): Promise<CreatedTerminal> {
+  const result = await command("tab.create", "/api/tab/create", {
+    workspace_id: workspaceId,
+    ...(cwd ? { cwd } : {}),
+    focus: false,
+  })
+  if (!result.ok) return { paneId: null, error: result.error ?? "create failed" }
+  const paneId = createdPaneId(result.result)
+  return { paneId, error: paneId === null ? "the desktop did not return the new pane" : null }
+}
+
+function createdPaneId(value: unknown): string | null {
+  if (value === null || typeof value !== "object") return null
+  const record = value as Record<string, unknown>
+  if (typeof record.pane_id === "string" && record.pane_id.length > 0) return record.pane_id
+  for (const child of Object.values(record)) {
+    const id = createdPaneId(child)
+    if (id !== null) return id
+  }
+  return null
 }
 
 export async function focusPane(paneId: string): Promise<void> {

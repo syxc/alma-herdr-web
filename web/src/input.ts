@@ -33,6 +33,11 @@ export class TerminalInput {
 
     this.field.addEventListener("keydown", (event) => this.onKeyDown(event))
     this.field.addEventListener("input", (event) => this.onInput(event))
+    this.field.addEventListener("compositionend", () => {
+      // Some IMEs finish with a composing input event and no later plain input.
+      // syncValue also deduplicates a final input event when one follows.
+      if (this.enabled) this.syncValue()
+    })
     this.field.addEventListener("click", () => this.onClick())
     this.field.addEventListener("keyup", () => this.onClick())
     this.canvas.addEventListener("keydown", (event) => this.onCanvasKeyDown(event))

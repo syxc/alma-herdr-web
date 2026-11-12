@@ -61,6 +61,7 @@
   import { appendAppearanceControl } from "/dist/appearance.js"
   import { TerminalInput } from "/dist/input.js"
   import { KeyToolbar } from "/dist/key-toolbar.js"
+  import { NewTerminalMenu } from "/dist/new-terminal.js"
   import { renderSessionList } from "/dist/session-list.js"
 
   const preview = document.querySelector("#preview")
@@ -279,6 +280,79 @@
     disabled.disabled = true
     check(Number(style(disabled).opacity) < 1, "Disabled input action remains distinct")
     disabled.disabled = false
+    show("dark", 390, "list")
+    let creationState = { workspaces: [{ workspace_id: "w2", label: "Chosen workspace", number: 2 }] }
+    let releaseCreate
+    const creations = []
+    const newMenu = new NewTerminalMenu(el("list-new"), el("new-terminal-menu"), {
+      snapshot: () => creationState,
+      beforeOpen: () => el("list-menu").classList.add("hidden"),
+      create: async (agent, workspaceId) => {
+        creations.push([agent.kind, workspaceId])
+        await new Promise((resolve) => {
+          releaseCreate = resolve
+        })
+      },
+    })
+    const menuLabels = () =>
+      [...el("new-terminal-menu").querySelectorAll(".popover-label")].map((node) => node.textContent)
+    const menuKey = (key) =>
+      doc.activeElement.dispatchEvent(
+        new preview.contentWindow.KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }),
+      )
+    newMenu.update()
+    el("list-menu").classList.remove("hidden")
+    el("list-new").click()
+    check(newMenu.isOpen() && el("list-menu").classList.contains("hidden"), "New Tab opens and closes the More menu")
+    check(
+      JSON.stringify(menuLabels()) === JSON.stringify(["Claude Code", "Codex", "pi"]),
+      "New Tab offers the Alma agent choices",
+    )
+    const firstAgent = doc.activeElement
+    newMenu.update()
+    check(doc.activeElement === firstAgent, "State polling preserves menu focus and DOM nodes")
+    menuKey("ArrowDown")
+    doc.activeElement.click()
+    check(
+      newMenu.isOpen() && el("new-terminal-menu").textContent.includes("Start Codex in"),
+      "Agent click keeps the workspace submenu open after bubbling",
+    )
+    check(
+      JSON.stringify(menuLabels()) === JSON.stringify(["Back", "Chosen workspace"]),
+      "Workspace submenu shows the target workspace",
+    )
+    await frame()
+    const newBounds = el("new-terminal-menu").getBoundingClientRect()
+    const listHeader = el("list-new").closest("header").getBoundingClientRect()
+    check(
+      newBounds.top >= listHeader.bottom && newBounds.right <= listHeader.right && newBounds.left >= listHeader.left,
+      "New Tab submenu fits the phone header",
+    )
+    menuKey("Escape")
+    check(newMenu.isOpen() && menuLabels()[0] === "Claude Code", "Escape returns from workspaces to agents")
+    menuKey("Escape")
+    check(!newMenu.isOpen() && doc.activeElement === el("list-new"), "Escape closes the agent menu and restores focus")
+    el("list-new").click()
+    doc.body.click()
+    check(!newMenu.isOpen(), "Clicking outside closes New Tab")
+    el("list-new").click()
+    el("new-terminal-menu").querySelectorAll("button")[1].click()
+    const workspaceButton = el("new-terminal-menu").querySelectorAll("button")[1]
+    workspaceButton.click()
+    workspaceButton.click()
+    check(
+      creations.length === 1 &&
+        JSON.stringify(creations[0]) === JSON.stringify(["codex", "w2"]) &&
+        el("list-new").disabled,
+      "Workspace selection starts once and disables duplicate creation",
+    )
+    releaseCreate()
+    await frame()
+    check(!el("list-new").disabled, "Creation completion enables New Tab again")
+    creationState = { workspaces: [] }
+    newMenu.update()
+    check(el("list-new").disabled && !newMenu.isOpen(), "An empty workspace list disables New Tab")
+    show("dark", 390, "detail")
     el("detail-back").focus()
     document.title = "PASS: UI details"
     lines.push("ALL CHECKS PASSED")

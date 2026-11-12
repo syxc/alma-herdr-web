@@ -40,6 +40,10 @@ function writeCollapsed(keys: string[]): void {
   }
 }
 
+export function paneNumbers(panes: readonly PaneRecord[]): Map<string, number> {
+  return new Map(panes.map((pane, index) => [pane.pane_id, index + 1]))
+}
+
 export function statusClass(status: string): string {
   return ["working", "blocked", "done", "idle"].includes(status) ? status : ""
 }
@@ -78,10 +82,7 @@ export function renderSessionList(container: HTMLElement, options: SessionListOp
   }
 
   const collapsed = readCollapsed()
-  const number = new Map<string, number>()
-  panes.forEach((pane, index) => {
-    number.set(pane.pane_id, index + 1)
-  })
+  const number = paneNumbers(panes)
 
   for (const group of GROUPS) {
     const members = panes.filter((pane) => group.match(pane.agent_status))

@@ -4,7 +4,7 @@ import { appendAppearanceControl } from "./appearance.js"
 import { ICONS } from "./icons.js"
 import { TerminalInput } from "./input.js"
 import { KeyToolbar } from "./key-toolbar.js"
-import { statusClass } from "./session-list.js"
+import { paneNumbers, statusClass } from "./session-list.js"
 import type { FitMode } from "./terminal.js"
 
 export interface DetailCallbacks {
@@ -387,8 +387,8 @@ export class DetailScreen {
       return
     }
 
-    const tab = snapshot?.tabs.find((t) => t.tab_id === pane.tab_id)
-    this.tabNumber.textContent = tab?.number ? String(tab.number) : "1"
+    const number = paneNumbers(snapshot?.panes ?? []).get(pane.pane_id)
+    this.tabNumber.textContent = number === undefined ? "—" : String(number)
     this.detailStatus.textContent = pane.agent_status
     // The name under the number is the workspace, the Alma app names it
     // that way too.
