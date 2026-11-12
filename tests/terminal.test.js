@@ -1,0 +1,156 @@
+import assert from "node:assert/strict"
+import { readFile } from "node:fs/promises"
+import { test } from "node:test"
+import { TerminalView } from "../web/dist/terminal.js"
+import { TerminalKernel } from "../web/dist/vt.js"
+
+const bytes = await readFile(new URL("../web/vendor/ghostty/ghostty-vt.wasm", import.meta.url))
+const settle = () => new Promise((resolve) => setImmediate(resolve))
+
+function environment(t, response = Promise.resolve(new Response(bytes))) {
+  for (const name of ["window", "document", "fetch"]) {
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, name)
+    t.after(() => {
+      if (descriptor) Object.defineProperty(globalThis, name, descriptor)
+      else delete globalThis[name]
+    })
+  }
+  globalThis.window = { devicePixelRatio: 1, setTimeout, clearTimeout }
+  globalThis.document = { fonts: new Set() }
+  globalThis.fetch = () => response
+  const operations = []
+  const context = {
+    globalAlpha: 1,
+    setTransform() {},
+    translate() {},
+    measureText: () => ({ width: 8 }),
+    fillRect(x, y, width, height) {
+      operations.push({ kind: "rect", x, y, width, height, color: this.fillStyle, alpha: this.globalAlpha })
+    },
+    fillText(text, x, y) {
+      operations.push({ kind: "text", text, x, y, color: this.fillStyle, alpha: this.globalAlpha })
+    },
+  }
+  const canvas = {
+    parentElement: null,
+    style: {},
+    width: 300,
+    height: 100,
+    getContext: () => context,
+    getBoundingClientRect: () => ({ width: 300, height: 100 }),
+  }
+  return { view: new TerminalView(canvas), operations }
+}
+
+async function ready(view) {
+  assert.equal(await view.kernel.load(), true)
+  await settle()
+}
+
+test("a late kernel repaints the latest snapshot without waiting for another poll", async (t) => {
+  const pending = Promise.withResolvers()
+  const { view, operations } = environment(t, pending.promise)
+  view.setMode("original")
+  await view.setContent("obsolete", 5)
+  await view.setContent("你Z", 5)
+  operations.length = 0
+  pending.resolve(new Response(bytes))
+  await ready(view)
+  const text = operations.filter((op) => op.kind === "text")
+  assert.deepEqual(
+    text.map((op) => op.text),
+    ["你", "Z"],
+  )
+  assert.equal(text[1].x, 16, "the wide character reserves its trailing column")
+})
+
+test("unchanged snapshots draw nothing, while resize still repaints existing content", async (t) => {
+  const { view, operations } = environment(t)
+  await view.setContent("static screen", 5)
+  await ready(view)
+  operations.length = 0
+  for (let index = 0; index < 100; index += 1) await view.setContent("static screen", 5)
+  assert.equal(operations.length, 0)
+  view.resize()
+  assert.ok(operations.some((op) => op.kind === "text"))
+  operations.length = 0
+  await view.setContent("changed screen", 5)
+  assert.ok(operations.some((op) => op.kind === "text"))
+})
+
+test("themes recolour indexed cells and defaults but preserve explicit RGB", async (t) => {
+  const { view, operations } = environment(t)
+  await ready(view)
+  await view.setContent("D\x1b[31mR\x1b[38;2;12;34;56mT", 5)
+  operations.length = 0
+  await view.setTheme("light")
+  const text = operations.filter((op) => op.kind === "text")
+  assert.deepEqual(
+    text.map((op) => op.color),
+    ["#1a1a1a", "#e45649", "#0c2238"],
+  )
+  assert.equal(operations[0].color, "#ffffff")
+  operations.length = 0
+  await view.setTheme("dark")
+  assert.deepEqual(
+    operations.filter((op) => op.kind === "text").map((op) => op.color),
+    ["#dcdfe4", "#e06c75", "#0c2238"],
+  )
+})
+
+test("a wide underlined glyph at the end of a row has a full-width underline", async (t) => {
+  const { view, operations } = environment(t)
+  await ready(view)
+  view.setMode("original")
+  operations.length = 0
+  await view.setContent("\x1b[4m你", 5)
+  assert.equal(operations.find((op) => op.kind === "rect" && op.height === 1)?.width, 16)
+})
+
+test("wide glyph backgrounds precede text and dim cannot leak into the next background", async (t) => {
+  const { view, operations } = environment(t)
+  await ready(view)
+  await view.setContent("\x1b[2mA\x1b[22;41m你\x1b[4m B", 5)
+  const firstText = operations.findIndex((op) => op.kind === "text")
+  const backgrounds = operations.filter((op) => op.kind === "rect" && op.height === 19)
+  assert.ok(backgrounds.length > 0)
+  assert.ok(backgrounds.every((op) => op.alpha === 1))
+  assert.ok(operations.slice(firstText).every((op) => op.kind !== "rect" || op.height === 1))
+  assert.ok(
+    operations.some((op) => op.kind === "rect" && op.height === 1),
+    "underline reaches the canvas",
+  )
+})
+
+test("a stalled WASM download times out and does not block a later attempt", async (t) => {
+  environment(t)
+  t.mock.method(console, "warn", () => {})
+  t.mock.timers.enable({ apis: ["Date", "setTimeout"], now: 10000 })
+  globalThis.fetch = () => new Promise(() => {})
+  const kernel = new TerminalKernel()
+  const first = kernel.load()
+  t.mock.timers.tick(15000)
+  assert.equal(await first, false)
+  t.mock.timers.tick(5000)
+  globalThis.fetch = async () => new Response(bytes)
+  assert.equal(await kernel.load(), true)
+})
+
+test("a failed WASM download can recover after the bounded retry delay", async (t) => {
+  environment(t)
+  t.mock.method(console, "warn", () => {})
+  let attempts = 0
+  let now = 10000
+  t.mock.method(Date, "now", () => now)
+  globalThis.fetch = async () => {
+    attempts += 1
+    return attempts === 1 ? new Response("unavailable", { status: 503 }) : new Response(bytes)
+  }
+  const kernel = new TerminalKernel()
+  assert.equal(await kernel.load(), false)
+  assert.equal(await kernel.load(), false)
+  assert.equal(attempts, 1)
+  now += 5000
+  assert.equal(await kernel.load(), true)
+  assert.equal(attempts, 2)
+})

@@ -25,6 +25,18 @@ test("a character that is wider than one column owns the column after it", async
   )
 })
 
+test("wide trailing columns and visible spaces survive row trimming", async () => {
+  const kernel = await openKernel()
+  assert.deepEqual(
+    kernel.setContent("你", 5).rows[0].map((cell) => cell.ch),
+    ["你", ""],
+  )
+  const underlined = kernel.setContent("\x1b[4mA  ", 5).rows[0]
+  assert.equal(underlined.length, 3)
+  assert.ok(underlined.every((cell) => cell.underline))
+  assert.equal(kernel.setContent("\x1b[7m  ", 5).rows[0].length, 2)
+})
+
 test("the styles of the text come from the kernel", async () => {
   const kernel = await openKernel()
   const screen = kernel.setContent("\u001b[1mbold\u001b[0m \u001b[3mitalic\u001b[0m \u001b[4munderline\u001b[0m", 5)

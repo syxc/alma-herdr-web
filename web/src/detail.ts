@@ -1,5 +1,6 @@
 import { agentKind, agentLabel, resumeArgs } from "./agents.js"
 import type { PaneRecord, SessionSnapshot } from "./api.js"
+import { appendAppearanceControl } from "./appearance.js"
 import { ICONS } from "./icons.js"
 import { TerminalInput } from "./input.js"
 import { statusClass } from "./session-list.js"
@@ -59,6 +60,7 @@ export class DetailScreen {
   private snapshot: SessionSnapshot | null = null
   private pane: PaneRecord | null = null
   private mode: FitMode = "wrap"
+  private actionSignature = ""
 
   private readonly tabSwitch = el<HTMLButtonElement>("tab-switch")
   private readonly tabNumber = el<HTMLSpanElement>("tab-number")
@@ -226,6 +228,15 @@ export class DetailScreen {
   }
 
   private renderActionMenu(): void {
+    const signature = JSON.stringify([this.mode, this.pane?.pane_id, this.pane?.agent, this.pane?.agent_session])
+    const size = this.actions.paneSize()
+    const dimensions = `Pane is ${size.cols} × ${size.rows}`
+    if (signature === this.actionSignature) {
+      const foot = this.actionMenu.querySelector(".popover-foot")
+      if (foot !== null) foot.textContent = dimensions
+      return
+    }
+    this.actionSignature = signature
     this.actionMenu.replaceChildren()
 
     const modes: { key: FitMode; label: string; glyph: string }[] = [
@@ -250,12 +261,13 @@ export class DetailScreen {
     }
     this.actionMenu.appendChild(this.separator())
 
+    appendAppearanceControl(this.actionMenu)
+    this.actionMenu.appendChild(this.separator())
     this.renderAgentActions()
 
-    const size = this.actions.paneSize()
     const foot = document.createElement("div")
     foot.className = "popover-foot"
-    foot.textContent = `Pane is ${size.cols} × ${size.rows}`
+    foot.textContent = dimensions
     this.actionMenu.appendChild(foot)
   }
 
@@ -274,7 +286,7 @@ export class DetailScreen {
     this.actionMenu.appendChild(
       this.item(ICONS.restart, `Restart ${label}`, "Quit the agent and start it again", () => {
         this.closeActionMenu()
-        void this.actions.restartAgent(pane, false)
+        if (this.pane !== null) void this.actions.restartAgent(this.pane, false)
       }),
     )
     this.actionMenu.appendChild(
@@ -284,7 +296,7 @@ export class DetailScreen {
         canContinue ? "Open the same session and carry on" : "This pane has no session to open",
         () => {
           this.closeActionMenu()
-          void this.actions.restartAgent(pane, true)
+          if (this.pane !== null) void this.actions.restartAgent(this.pane, true)
         },
         false,
         !canContinue,

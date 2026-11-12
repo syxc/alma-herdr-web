@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>Terminal input checks</title>
+    <style>
+    body {
+      max-width: 760px;
+      margin: 24px auto;
+      padding: 0 16px;
+      font: 15px system-ui;
+      color: #1a1a1a;
+    }
+    input {
+      width: min(90%, 500px);
+      padding: 8px;
+      font: 16px monospace;
+    }
+    canvas {
+      display: block;
+      width: 200px;
+      height: 30px;
+      border: 1px solid #aaa;
+    }
+    pre {
+      white-space: pre-wrap;
+    }
+    #fixtures {
+      display: none;
+    }
+    </style>
+  </head>
+  <body>
+    <h1>Terminal input checks</h1>
+    <p>
+      Real DOM controls with an isolated key sink. Composition events are controlled; this does not test a phone IME.
+    </p>
+    <pre id="results">Running…</pre>
+    <div id="fixtures"></div>
+    <label>Manual input <input id="manual" autocomplete="off"></label>
+    <canvas id="screen" tabindex="0" aria-label="Manual terminal keys"></canvas>
+    <pre id="manual-state"></pre>
+    <script type="module">
+    import { TerminalInput } from "/dist/input.js"
+
+    const results = document.querySelector("#results")
+    const fixtures = document.querySelector("#fixtures")
+    const lines = []
+    const settle = () => new Promise((resolve) => setTimeout(resolve, 40))
+    function equal(actual, expected) {
+      if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+        throw new Error(JSON.stringify({ actual, expected }))
+      }
+    }
+    function press(target, key, options = {}) {
+      const event = new KeyboardEvent("keydown", { key, cancelable: true, bubbles: true, ...options })
+      target.dispatchEvent(event)
+      return event
+    }
+    function fixture() {
+      const field = document.createElement("input")
+      const canvas = document.createElement("canvas")
+      fixtures.append(field, canvas)
+      const sent = []
+      const input = new TerminalInput(field, canvas, {
+        sendText: (text) => sent.push(["text", text]),
+        sendKeys: (keys) => sent.push(["keys", keys]),
+      })
+      input.setEnabled(true)
+      return { field, canvas, sent, input }
+    }
+    async function check(name, run) {
+      try {
+        await run(fixture())
+        lines.push(`PASS ${name}`)
+      } catch (error) {
+        lines.push(`FAIL ${name}: ${error.message}`)
+      }
+      results.textContent = lines.join("\n")
+    }
+    await check("Unicode backspace and DOM caret", async ({ input, field, sent }) => {
+      input.type("a😀")
+      press(field, "Backspace")
+      equal([field.value, field.selectionStart, field.selectionEnd], ["a", 1, 1])
+      await settle()
+      equal(sent, [
+        ["text", "a😀"],
+        ["keys", ["backspace"]],
+      ])
+    })
+    await check("Unicode arrows, chip arrows and pointer movement", async ({ input, field, sent }) => {
+      input.type("a😀b")
+      press(field, "ArrowLeft")
+      input.sendSpecial(["left"])
+      equal(field.selectionStart, 1)
+      field.setSelectionRange(4, 4)
+      field.dispatchEvent(new MouseEvent("click"))
+      await settle()
+      equal(sent, [
+        ["text", "a😀b"],
+        ["keys", ["left", "left", "right", "right"]],
+      ])
+    })
+    await check("Middle edit restores the browser caret", async ({ input, field }) => {
+      input.type("abcd")
+      press(field, "ArrowLeft")
+      press(field, "ArrowLeft")
+      press(field, "Backspace")
+      equal([field.value, field.selectionStart], ["acd", 1])
+      input.type("X")
+      equal([field.value, field.selectionStart], ["aXcd", 2])
+    })
+    await check("Ctrl+U and Ctrl+W keep the caret before the suffix", async ({ input, field }) => {
+      input.type("one two tail")
+      press(field, "ArrowLeft", { ctrlKey: true })
+      press(field, "w", { ctrlKey: true })
+      equal([field.value, field.selectionStart], ["one tail", 4])
+      press(field, "u", { ctrlKey: true })
+      equal([field.value, field.selectionStart], ["tail", 0])
+    })
+    await check("Cmd shortcuts stay in the browser", async ({ field, sent }) => {
+      for (const key of ["Enter", "Tab", "Backspace", "ArrowLeft", "ArrowRight", "Home", "End"]) {
+        equal(press(field, key, { metaKey: true }).defaultPrevented, false)
+      }
+      await settle()
+      equal(sent, [])
+    })
+    await check("Cmd navigation synchronizes before the next edit", async ({ input, field, sent }) => {
+      input.type("abcd")
+      press(field, "ArrowLeft", { metaKey: true })
+      field.setSelectionRange(0, 0)
+      press(field, "Backspace")
+      equal([field.value, field.selectionStart], ["abcd", 0])
+      await settle()
+      equal(sent, [
+        ["text", "abcd"],
+        ["keys", ["left", "left", "left", "left", "backspace"]],
+      ])
+    })
+    await check("Selected text replacement preserves the remote suffix and caret", async ({ input, field, sent }) => {
+      input.type("abcd")
+      field.setSelectionRange(1, 2)
+      field.dispatchEvent(new MouseEvent("click"))
+      field.value = "aXcd"
+      field.setSelectionRange(2, 2)
+      field.dispatchEvent(new InputEvent("input", { data: "X" }))
+      await settle()
+      equal(sent, [
+        ["text", "abcd"],
+        ["keys", ["left", "left", "left", "backspace", "ctrl+k"]],
+        ["text", "aXcd"],
+        ["keys", ["left", "left"]],
+      ])
+    })
+    for (const direction of ["ArrowLeft", "ArrowRight"]) {
+      await check(`Selected Unicode text collapses for ${direction}`, async ({ input, field, sent }) => {
+        input.type("ab😀cd")
+        field.setSelectionRange(0, 6)
+        field.dispatchEvent(new KeyboardEvent("keyup"))
+        press(field, direction)
+        equal([field.selectionStart, field.selectionEnd], direction === "ArrowLeft" ? [0, 0] : [6, 6])
+        await settle()
+        const moves = new Array(5).fill("left")
+        if (direction === "ArrowRight") moves.push(...new Array(5).fill("right"))
+        equal(sent, [
+          ["text", "ab😀cd"],
+          ["keys", moves],
+        ])
+      })
+    }
+    for (const endFirst of [false, true]) {
+      await check(
+        `Controlled IME confirmation: compositionend ${endFirst ? "before" : "after"} keydown`,
+        async ({ field, canvas, sent }) => {
+          field.dispatchEvent(new CompositionEvent("compositionstart"))
+          field.value = "中"
+          field.dispatchEvent(new InputEvent("input", { data: "中", isComposing: true }))
+          await settle()
+          equal(sent, [])
+          if (endFirst) field.dispatchEvent(new CompositionEvent("compositionend", { data: "中" }))
+          equal(press(field, "Enter", { isComposing: !endFirst, keyCode: 229 }).defaultPrevented, false)
+          equal(press(canvas, "Enter", { isComposing: !endFirst, keyCode: 229 }).defaultPrevented, false)
+          if (!endFirst) field.dispatchEvent(new CompositionEvent("compositionend", { data: "中" }))
+          field.dispatchEvent(new InputEvent("input", { data: "中", isComposing: false }))
+          await settle()
+          equal(sent, [["text", "中"]])
+          press(field, "Enter")
+          await settle()
+          equal(sent, [
+            ["text", "中"],
+            ["keys", ["enter"]],
+          ])
+        },
+      )
+    }
+    document.title = lines.some((line) => line.startsWith("FAIL")) ? "FAIL: Terminal input" : "PASS: Terminal input"
+    results.textContent += `\n${document.title.startsWith("PASS") ? "ALL CHECKS PASSED" : "CHECKS FAILED"}`
+    const field = document.querySelector("#manual")
+    const log = document.querySelector("#manual-state")
+    const sent = []
+    function show() {
+      log.textContent = JSON.stringify({ value: field.value, caret: field.selectionStart, sent }, null, 2)
+    }
+    const input = new TerminalInput(field, document.querySelector("#screen"), {
+      sendText: (text) => {
+        sent.push(["text", text])
+        show()
+      },
+      sendKeys: (keys) => {
+        sent.push(["keys", keys])
+        show()
+      },
+    })
+    input.setEnabled(true)
+    </script>
+  </body>
+</html>

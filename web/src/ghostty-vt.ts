@@ -1,5 +1,6 @@
 // Resolve ABI layouts from the WASM manifest instead of hard-coding offsets.
 import { rgb, xterm256 } from "./ansi.js"
+import { TERMINAL_COLORS, type TerminalColors } from "./terminal-theme.js"
 
 export interface VtCell {
   ch: string // Empty in the trailing column of a wide character.
@@ -66,9 +67,6 @@ interface Manifest {
   abi: { usize_size: number; pointer_size: number; endian: string }
 }
 
-const FOREGROUND = "#dadee3"
-const BACKGROUND = "#282c35"
-
 const SCROLLBACK_LINES = 5000
 
 function rgbBytes(color: string): [number, number, number] {
@@ -79,8 +77,8 @@ function rgbBytes(color: string): [number, number, number] {
   ]
 }
 
-function paletteBytes(): Uint8Array {
-  return Uint8Array.from(Array.from({ length: 256 }, (_, index) => rgbBytes(xterm256(index))).flat())
+function paletteBytes(colors: TerminalColors): Uint8Array {
+  return Uint8Array.from(Array.from({ length: 256 }, (_, index) => rgbBytes(xterm256(index, colors.palette))).flat())
 }
 
 // Overestimate widths so replay never wraps the server-rendered rows.
@@ -211,7 +209,7 @@ export class GhosttyKernel {
     // The screen and the scrollback are emptied first, so the terminal holds
     // exactly what was read this time. Lines that do not fit on the screen
     // end up in the scrollback, which is where the older lines belong.
-    this.write("\u001b[3J\u001b[2J\u001b[H")
+    this.write("\u001b[0m\u001b[3J\u001b[2J\u001b[H")
     this.resize(cols, rows)
     this.write(lines.join("\r\n"))
 
@@ -395,12 +393,12 @@ export class GhosttyKernel {
     this.wasm.ghostty_terminal_resize(this.terminal, cols, rows)
   }
 
-  private setColors(): void {
+  setColors(colors: TerminalColors = TERMINAL_COLORS.dark): void {
     const foreground = this.alloc(3)
     const background = this.alloc(3)
     const view = this.view()
-    const fg = rgbBytes(FOREGROUND)
-    const bg = rgbBytes(BACKGROUND)
+    const fg = rgbBytes(colors.foreground)
+    const bg = rgbBytes(colors.background)
     view.setUint8(foreground, fg[0])
     view.setUint8(foreground + 1, fg[1])
     view.setUint8(foreground + 2, fg[2])
@@ -410,7 +408,7 @@ export class GhosttyKernel {
     this.wasm.ghostty_terminal_set(this.terminal, this.ids.terminalOptColorForeground, foreground)
     this.wasm.ghostty_terminal_set(this.terminal, this.ids.terminalOptColorBackground, background)
 
-    const palette = paletteBytes()
+    const palette = paletteBytes(colors)
     const palettePointer = this.alloc(palette.length)
     this.bytes().set(palette, palettePointer)
     this.wasm.ghostty_terminal_set(this.terminal, this.ids.terminalOptColorPalette, palettePointer)
@@ -579,7 +577,7 @@ const EMPTY_CELL: VtCell = {
 }
 
 function cellIsBlank(cell: VtCell): boolean {
-  return (cell.ch === "" || cell.ch === " ") && cell.bg === ""
+  return cell.ch === " " && cell.bg === "" && !cell.underline && !cell.reverse
 }
 
 function rowIsBlank(row: VtCell[]): boolean {

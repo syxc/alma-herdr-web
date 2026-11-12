@@ -124,20 +124,20 @@ GitHub Actions 在推送到 `master`、提交 Pull Request 或手动触发时运
 | `node scripts/check-recovery-browser.mjs`  | 完整应用的刷新配对恢复、无响应和断线重连                |
 | `node scripts/e2e-check.mjs`               | 使用本机身份，经真实 relay 读取面板、输入命令并检查回显 |
 
-前两项输出仅监听回环地址的检查页面。第三项会实际向第一个面板输入命令，需在可操作的测试面板上运行。手机软键盘、中文 IME 和键盘遮挡需按[界面验收步骤](docs/ui-design.md#验收)在真机检查，桌面测试不覆盖这些行为。
+前两项输出仅监听回环地址的检查页面。字体服务的 `/terminal` 页面另检查 Canvas 明暗切换、静止快照重绘和三种模式的滚动；恢复服务的 `/check/phone` 提供 390 × 844 的应用预览，`/check/activity` 以受控可见性事件检查前后台读取及刷新恢复，`/check/input` 检查真实 DOM 中的 Unicode 编辑、光标与受控组合输入事件。第三项会实际向第一个面板输入命令，需在可操作的测试面板上运行。手机软键盘、中文 IME 和键盘遮挡需按[界面验收步骤](docs/ui-design.md#验收)在真机检查，桌面测试不覆盖这些行为。
 
 `npm run privacy-check` 检查工作区文件；`npm run privacy-check -- --staged` 检查完整暂存区快照。`npm run privacy-check -- --install` 安装或更新提交钩子，使其检查暂存区，避免工作区的后续修改掩盖已暂存内容。检查日志只报告文件、行号和规则，不回显敏感值。仓库不保存连接码、路由令牌、二维码截图、本机配置或私有路径。第三方字体、WASM 与许可证按[资源说明](docs/third-party.md)维护。
 
 ## 代码导航
 
-| 目录或模块                                          | 职责                                                    |
-| --------------------------------------------------- | ------------------------------------------------------- |
-| `agent/src/`                                        | herdr socket、状态缓存、HTTP 服务、relay 注册与加密桥接 |
-| `web/src/main.ts`、`detail.ts`                      | 页面状态、配对、会话选择与终端交互                      |
-| `web/src/api.ts`、`alma.ts`、`tunnel.ts`            | 本地 API 与两种远端协议                                 |
-| `web/src/terminal.ts`、`ghostty-vt.ts`、`layout.ts` | 渲染、VT 绑定与窄屏重排                                 |
-| `web/src/input.ts`、`send-queue.ts`、`keys.ts`      | 终端输入与按序发送                                      |
-| `mock/`、`tests/`、`scripts/`                       | 模拟服务、回归与构建检查                                |
+| 目录或模块                                                     | 职责                                                    |
+| -------------------------------------------------------------- | ------------------------------------------------------- |
+| `agent/src/`                                                   | herdr socket、状态缓存、HTTP 服务、relay 注册与加密桥接 |
+| `web/src/main.ts`、`detail.ts`                                 | 页面状态、配对、会话选择与终端交互                      |
+| `web/src/api.ts`、`alma.ts`、`tunnel.ts`                       | 本地 API 与两种远端协议                                 |
+| `web/src/terminal.ts`、`ghostty-vt.ts`、`layout.ts`            | 渲染、VT 绑定与窄屏重排                                 |
+| `web/src/input.ts`、`line-edit.ts`、`send-queue.ts`、`keys.ts` | 终端输入与按序发送                                      |
+| `mock/`、`tests/`、`scripts/`                                  | 模拟服务、回归与构建检查                                |
 
 ## 限制
 

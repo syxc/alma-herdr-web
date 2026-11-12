@@ -7,6 +7,8 @@
  * therefore enough to draw the pane faithfully.
  */
 
+import { TERMINAL_COLORS } from "./terminal-theme.js"
+
 export interface CellStyle {
   fg: string
   bg: string
@@ -28,24 +30,7 @@ export interface Grid {
   cells: Cell[][]
 }
 
-const BASE_COLORS = [
-  "#1c1f24",
-  "#e05252",
-  "#4fb56a",
-  "#c9a227",
-  "#4a90d9",
-  "#a86fd6",
-  "#3fa8a8",
-  "#c8ccd4",
-  "#5a6270",
-  "#ff6b6b",
-  "#7fd98a",
-  "#f0d264",
-  "#7cb8f0",
-  "#cf9cf0",
-  "#6fdede",
-  "#f2f4f8",
-]
+const BASE_COLORS = TERMINAL_COLORS.dark.palette
 
 function defaultStyle(): CellStyle {
   return {
@@ -59,12 +44,12 @@ function defaultStyle(): CellStyle {
   }
 }
 
-export function xterm256(index: number): string {
+export function xterm256(index: number, palette: readonly string[] = BASE_COLORS): string {
   if (index < 0 || index > 255) {
     return ""
   }
   if (index < 16) {
-    return BASE_COLORS[index] ?? ""
+    return palette[index] ?? ""
   }
   if (index < 232) {
     const n = index - 16
@@ -85,7 +70,7 @@ export function rgb(r: number, g: number, b: number): string {
 /**
  * Applies one SGR parameter list to a style.
  */
-function applySgr(style: CellStyle, params: number[]): void {
+function applySgr(style: CellStyle, params: number[], palette: readonly string[]): void {
   if (params.length === 0) {
     params = [0]
   }
@@ -114,22 +99,22 @@ function applySgr(style: CellStyle, params: number[]): void {
     } else if (code === 27) {
       style.reverse = false
     } else if (code >= 30 && code <= 37) {
-      style.fg = BASE_COLORS[code - 30] ?? ""
+      style.fg = palette[code - 30] ?? ""
     } else if (code === 39) {
       style.fg = ""
     } else if (code >= 40 && code <= 47) {
-      style.bg = BASE_COLORS[code - 40] ?? ""
+      style.bg = palette[code - 40] ?? ""
     } else if (code === 49) {
       style.bg = ""
     } else if (code >= 90 && code <= 97) {
-      style.fg = BASE_COLORS[code - 90 + 8] ?? ""
+      style.fg = palette[code - 90 + 8] ?? ""
     } else if (code >= 100 && code <= 107) {
-      style.bg = BASE_COLORS[code - 100 + 8] ?? ""
+      style.bg = palette[code - 100 + 8] ?? ""
     } else if (code === 38 || code === 48) {
       const mode = params[index + 1] ?? 0
       let color = ""
       if (mode === 5) {
-        color = xterm256(params[index + 2] ?? 0)
+        color = xterm256(params[index + 2] ?? 0, palette)
         index += 2
       } else if (mode === 2) {
         color = rgb(params[index + 2] ?? 0, params[index + 3] ?? 0, params[index + 4] ?? 0)
@@ -164,7 +149,7 @@ function parseParams(raw: string): number[] {
 /**
  * Turns herdr's ANSI text into a grid of styled cells.
  */
-export function parseAnsi(text: string): Grid {
+export function parseAnsi(text: string, palette: readonly string[] = BASE_COLORS): Grid {
   const rows: Cell[][] = []
   let row: Cell[] = []
   const style = defaultStyle()
@@ -199,7 +184,7 @@ export function parseAnsi(text: string): Grid {
       }
       const final = text[end] ?? ""
       if (final === "m") {
-        applySgr(style, parseParams(text.substring(index + 2, end)))
+        applySgr(style, parseParams(text.substring(index + 2, end)), palette)
       }
       index = end + 1
       continue

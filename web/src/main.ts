@@ -24,6 +24,7 @@ import {
   setUnauthorizedHandler,
   startAgent,
 } from "./api.js"
+import { appendAppearanceControl, initAppearance } from "./appearance.js"
 import { authStatus, signIn, signOut } from "./auth.js"
 import { DetailScreen } from "./detail.js"
 import { forgetPairing, type Pairing, readPairing, readSavedPairing, savePairing } from "./pairing.js"
@@ -83,8 +84,12 @@ const qrNote = el<HTMLElement>("qr-note")
 let scanner: ScannerHandle | null = null
 
 let localApi = true
+let currentScreen: "login" | "list" | "detail" = "login"
+let stateRefreshNeeded = false
 
 const terminal = new TerminalView(terminalCanvas)
+initAppearance((theme) => void terminal.setTheme(theme))
+appendAppearanceControl(loginNote.parentElement ?? loginScreen)
 
 let snapshot: SessionSnapshot | null = null
 let selectedPaneId: string | null = null
@@ -180,6 +185,7 @@ function isPhone(): boolean {
 }
 
 function showScreen(screen: "login" | "list" | "detail"): void {
+  currentScreen = screen
   loginScreen.classList.toggle("hidden", screen !== "login")
   app.classList.toggle("hidden", screen === "login")
   listScreen.classList.toggle("hidden", screen !== "list")
@@ -361,7 +367,12 @@ async function selectWorkspace(workspaceId: string): Promise<void> {
   }
 }
 
+function terminalVisible(): boolean {
+  return currentScreen === "detail" && document.visibilityState !== "hidden"
+}
+
 async function refreshTerminal(): Promise<void> {
+  if (!terminalVisible()) return
   const pane = selectedPane()
   if (pane === null || pendingTerminal !== null) {
     return
@@ -374,7 +385,7 @@ async function refreshTerminal(): Promise<void> {
     // a reader can scroll back into the history.
     const read = await readPane(pane.pane_id, "recent", "ansi", 120)
     if (read === null) throw new Error("the desktop did not return its screen")
-    if (generation === connectionGeneration && pane.pane_id === selectedPaneId) {
+    if (generation === connectionGeneration && pane.pane_id === selectedPaneId && terminalVisible()) {
       await terminal.setContent(read.text, pane.viewport_rows)
     }
   } catch (error) {
@@ -458,6 +469,7 @@ function renderListMenu(): void {
     })
     listMenu.appendChild(item)
   }
+  appendAppearanceControl(listMenu)
 }
 
 async function createNewWorkspace(): Promise<void> {
@@ -598,13 +610,15 @@ function connectionFailed(error: unknown): void {
   if (snapshot === null) pairPanel.classList.remove("hidden")
 }
 
-async function poll(): Promise<void> {
-  if (pollBusy || pairingBusy) return
+async function poll(refreshStateFirst = false): Promise<void> {
+  if (refreshStateFirst) stateRefreshNeeded = true
+  if (pollBusy || pairingBusy || currentScreen === "login" || document.visibilityState === "hidden") return
   pollBusy = true
   try {
     if (reconnectNeeded && activePairing !== null) {
       if (Date.now() >= reconnectAt) await applyPairing(activePairing)
-    } else if (needsStatePolling()) {
+    } else if (stateRefreshNeeded || needsStatePolling()) {
+      stateRefreshNeeded = false
       await refreshState()
     } else {
       await refreshTerminal()
@@ -850,6 +864,7 @@ async function start(): Promise<void> {
   }
 
   showScreen(paired && readSelection() !== null && selectedPane() !== null ? "detail" : "list")
+  await refreshTerminal()
 
   if (pollTimer === null) pollTimer = window.setInterval(() => void poll(), 1500)
 
@@ -864,16 +879,16 @@ window.addEventListener("offline", () => {
 })
 window.addEventListener("online", () => {
   reconnectAt = 0
-  void poll()
+  void poll(true)
 })
 window.addEventListener("pageshow", () => {
   reconnectAt = 0
-  void poll()
+  void poll(true)
 })
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible") {
     reconnectAt = 0
-    void poll()
+    void poll(true)
   }
 })
 

@@ -10,10 +10,12 @@ const mock = new AlmaMock()
 await mock.start()
 let paused = false
 let reads = 0
+let stateReads = 0
 const answer = mock.answer.bind(mock)
 mock.answer = async (socket, frame, key) => {
   if (paused) return
   const request = JSON.parse(new TextDecoder().decode(frame.b))
+  if (request.method === "workspace.list") stateReads += 1
   if (request.method === "pane.read") {
     reads += 1
     mock.paneText.set("w1:p1", `recovery-check 中文 \ue0a0 \u{f0766} update ${reads}`)
@@ -38,6 +40,34 @@ const types = {
 }
 const server = createServer(async (request, response) => {
   const path = new URL(request.url, "http://localhost").pathname
+  if (path === "/check/stats" && request.method === "GET") {
+    response
+      .writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" })
+      .end(JSON.stringify({ stateReads, paneReads: reads, connections: mock.connections.size }))
+    return
+  }
+  if (path === "/check/activity" || path === "/check/input") {
+    const fixture = await readFile(
+      resolve(root, path === "/check/input" ? "tests/input-browser.html" : "tests/activity-browser.html"),
+      "utf8",
+    )
+    response
+      .writeHead(200, { "Content-Type": "text/html", "Cache-Control": "no-store" })
+      .end(fixture.replace('"__TEST_PAIRING__"', JSON.stringify(link)))
+    return
+  }
+  if (path === "/check/phone") {
+    response
+      .writeHead(200, { "Content-Type": "text/html", "Cache-Control": "no-store" })
+      .end(
+        '<!doctype html><meta charset="utf-8"><title>Phone preview</title>' +
+          "<style>body{margin:16px;background:#e5e7eb;font:14px system-ui}iframe{width:390px;height:844px;border:0;display:block}</style>" +
+          '<p>390 × 844 CSS pixels · mock desktop</p><label>Test pairing <input aria-label="Test pairing" readonly value="' +
+          link.replaceAll("&", "&amp;") +
+          '"></label><iframe title="Phone app" src="/?clean=1"></iframe>',
+      )
+    return
+  }
   if (request.method === "POST" && path.startsWith("/check/")) {
     if (path === "/check/pause") paused = true
     if (path === "/check/resume") paused = false
@@ -58,7 +88,7 @@ const server = createServer(async (request, response) => {
   }
   try {
     let data = await readFile(file)
-    if (file.endsWith("index.html"))
+    if (file.endsWith("index.html") && !new URL(request.url, "http://localhost").searchParams.has("clean"))
       data = Buffer.from(data.toString().replace("<body>", `<body style="padding-top:80px">${controls}`))
     response
       .writeHead(200, {

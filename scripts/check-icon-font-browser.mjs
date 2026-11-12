@@ -15,8 +15,10 @@ const types = {
 let failed = false
 createServer(async (request, response) => {
   const pathname = new URL(request.url, "http://localhost").pathname
-  const path = pathname === "/" ? resolve(root, "tests/icon-font-browser.html") : resolve(web, `.${pathname}`)
-  if (pathname !== "/" && !path.startsWith(web + sep)) {
+  const fixture =
+    pathname === "/" ? "icon-font-browser.html" : pathname === "/terminal" ? "terminal-browser.html" : null
+  const path = fixture === null ? resolve(web, `.${pathname}`) : resolve(root, "tests", fixture)
+  if (fixture === null && !path.startsWith(web + sep)) {
     response.writeHead(404).end()
     return
   }

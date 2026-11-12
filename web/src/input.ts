@@ -13,68 +13,8 @@
  */
 
 import { mapKey } from "./keys.js"
+import { adjacentCaret, characterCount, lineEdit, wordEnd, wordStart } from "./line-edit.js"
 import { KeyQueue, type KeySink } from "./send-queue.js"
-
-/**
- * How the line changes, in the order the pane has to get it.
- */
-export interface LineEdit {
-  /** How many characters have to be erased before the new text. */
-  backspaces: number
-  /** Whether the rest of the line has to be killed as well. */
-  killToEnd: boolean
-  /** The text that goes in after the erasing. */
-  text: string
-}
-
-/**
- * The change between two states of the line.
- *
- * The comparison runs around the cursor, because text that is typed in the
- * middle of a line erases nothing: only what stands in front of the cursor
- * counts.
- */
-export function lineEdit(before: string, caret: number, after: string, nextCaret: number): LineEdit {
-  const head = before.slice(0, caret)
-  const nextHead = after.slice(0, nextCaret)
-  if (nextHead.startsWith(head)) {
-    return { backspaces: 0, killToEnd: false, text: after.slice(caret, nextCaret) }
-  }
-  if (head.startsWith(nextHead)) {
-    return { backspaces: caret - nextCaret, killToEnd: false, text: "" }
-  }
-  // The line was written over, so what is there goes away and the new line
-  // is typed again.
-  return { backspaces: caret, killToEnd: true, text: after }
-}
-
-/**
- * Where the word before the cursor begins.
- */
-function wordStart(value: string, caret: number): number {
-  let index = caret
-  while (index > 0 && value.charAt(index - 1) === " ") {
-    index -= 1
-  }
-  while (index > 0 && value.charAt(index - 1) !== " ") {
-    index -= 1
-  }
-  return index
-}
-
-/**
- * Where the word after the cursor ends.
- */
-function wordEnd(value: string, caret: number): number {
-  let index = caret
-  while (index < value.length && value.charAt(index) === " ") {
-    index += 1
-  }
-  while (index < value.length && value.charAt(index) !== " ") {
-    index += 1
-  }
-  return index
-}
 
 export class TerminalInput {
   private readonly field: HTMLInputElement
@@ -94,6 +34,7 @@ export class TerminalInput {
     this.field.addEventListener("keydown", (event) => this.onKeyDown(event))
     this.field.addEventListener("input", (event) => this.onInput(event))
     this.field.addEventListener("click", () => this.onClick())
+    this.field.addEventListener("keyup", () => this.onClick())
     this.canvas.addEventListener("keydown", (event) => this.onCanvasKeyDown(event))
   }
 
@@ -147,12 +88,13 @@ export class TerminalInput {
     if (!this.enabled || text.length === 0) {
       return
     }
+    this.onClick()
     this.queue.text(text)
     // The field shows the line the pane is holding.
     const value = this.field.value
     this.field.value = value.slice(0, this.caret) + text + value.slice(this.caret)
     this.line = this.field.value
-    this.caret += text.length
+    this.setCaret(this.caret + text.length)
   }
 
   /**
@@ -174,10 +116,10 @@ export class TerminalInput {
       return
     }
     if (keys.includes("left")) {
-      this.setCaret(this.caret - 1)
+      this.setCaret(adjacentCaret(this.field.value, this.caret, -1))
     }
     if (keys.includes("right")) {
-      this.setCaret(this.caret + 1)
+      this.setCaret(adjacentCaret(this.field.value, this.caret, 1))
     }
   }
 
@@ -185,10 +127,26 @@ export class TerminalInput {
    * The keys of the field.
    */
   private onKeyDown(event: KeyboardEvent): void {
-    if (!this.enabled || event.isComposing) {
+    if (!this.enabled || event.metaKey || event.isComposing || event.keyCode === 229) {
       return
     }
     const key = event.key
+    if (
+      (key === "ArrowLeft" || key === "ArrowRight") &&
+      this.field.selectionStart !== this.field.selectionEnd &&
+      !event.ctrlKey &&
+      !event.altKey &&
+      !event.shiftKey
+    ) {
+      event.preventDefault()
+      const target =
+        (key === "ArrowLeft" ? this.field.selectionStart : this.field.selectionEnd) ?? this.field.value.length
+      this.field.setSelectionRange(target, target)
+      this.onClick()
+      return
+    }
+    // Native Cmd navigation can change the DOM caret between key events.
+    this.onClick()
 
     if (key === "Enter") {
       event.preventDefault()
@@ -207,11 +165,13 @@ export class TerminalInput {
       return
     }
     if (key === "Backspace") {
+      if (this.field.selectionStart !== this.field.selectionEnd) return
       event.preventDefault()
       this.eraseBefore()
       return
     }
     if (key === "Delete") {
+      if (this.field.selectionStart !== this.field.selectionEnd) return
       // herdr has no delete key, and nothing else means the same thing.
       event.preventDefault()
       return
@@ -243,10 +203,6 @@ export class TerminalInput {
       }
       return
     }
-    if (event.metaKey) {
-      // The shortcuts of the browser stay with the browser.
-      return
-    }
     if (event.ctrlKey && !event.altKey && key.length === 1) {
       event.preventDefault()
       this.control(key.toLowerCase())
@@ -275,7 +231,8 @@ export class TerminalInput {
     }
     const value = this.field.value
     const caret = this.field.selectionStart ?? value.length
-    if (value === this.line && caret === this.caret) {
+    if (value === this.line) {
+      this.onClick()
       return
     }
     const edit = lineEdit(this.line, this.caret, value, caret)
@@ -288,6 +245,10 @@ export class TerminalInput {
     if (edit.text.length > 0) {
       this.queue.text(edit.text)
     }
+    if (edit.killToEnd) {
+      const steps = characterCount(value.slice(caret))
+      if (steps > 0) this.queue.keys(new Array(steps).fill("left"))
+    }
     this.line = value
     this.caret = caret
   }
@@ -296,11 +257,11 @@ export class TerminalInput {
    * The reader put the cursor somewhere in the field.
    */
   private onClick(): void {
-    if (!this.enabled) {
+    if (!this.enabled || this.field.value !== this.line) {
       return
     }
     const caret = this.field.selectionStart ?? this.field.value.length
-    const steps = caret - this.caret
+    const steps = characterCount(this.line.slice(0, caret)) - characterCount(this.line.slice(0, this.caret))
     if (steps === 0) {
       return
     }
@@ -388,7 +349,7 @@ export class TerminalInput {
       ? direction < 0
         ? wordStart(value, this.caret)
         : wordEnd(value, this.caret)
-      : Math.max(0, Math.min(value.length, this.caret + direction))
+      : adjacentCaret(value, this.caret, direction)
     this.queue.keys([byWord ? (direction < 0 ? "ctrl+left" : "ctrl+right") : direction < 0 ? "left" : "right"])
     this.setCaret(target)
   }
@@ -403,9 +364,10 @@ export class TerminalInput {
       return
     }
     const value = this.field.value
-    this.field.value = value.slice(0, this.caret - 1) + value.slice(this.caret)
+    const previous = adjacentCaret(value, this.caret, -1)
+    this.field.value = value.slice(0, previous) + value.slice(this.caret)
     this.line = this.field.value
-    this.caret -= 1
+    this.setCaret(previous)
     this.queue.keys(["backspace"])
   }
 
@@ -416,7 +378,7 @@ export class TerminalInput {
     const value = this.field.value
     this.field.value = value.slice(this.caret)
     this.line = this.field.value
-    this.caret = 0
+    this.setCaret(0)
   }
 
   /**
@@ -435,7 +397,7 @@ export class TerminalInput {
     const end = wordStart(value, this.caret)
     this.field.value = value.slice(0, end) + value.slice(this.caret)
     this.line = this.field.value
-    this.caret = end
+    this.setCaret(end)
   }
 
   /**

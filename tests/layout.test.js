@@ -93,8 +93,56 @@ test("a line that divides the screen is cut to the width, not folded", () => {
   assert.equal(lines(laid)[1], "\u276f")
 })
 
+test("wide glyphs keep their trailing columns when wrapping", () => {
+  const cells = ["A", "你", "", "好", "", "B", "你", "", "Z"].map(cell)
+  const laid = layoutGrid({ cols: cells.length, rows: 1, cells: [cells] }, 4)
+  assert.ok(laid.cells.every((row) => row.length <= 4 && row[0].ch !== ""))
+  assert.deepEqual(
+    laid.cells.flat().map((entry) => entry.ch),
+    cells.map((entry) => entry.ch),
+  )
+  for (const row of laid.cells) {
+    row.forEach((entry, index) => {
+      if (entry.ch === "你" || entry.ch === "好") assert.equal(row[index + 1]?.ch, "")
+    })
+  }
+})
+
+test("reflow preserves background, reverse and underlined spaces", () => {
+  const cells = [cell("A"), cell(" "), cell(" "), cell(" "), cell("B")]
+  cells[1].style.underline = true
+  cells[2].style.reverse = true
+  cells[3].style.bg = "#ff0000"
+  const laid = layoutGrid({ cols: 5, rows: 1, cells: [cells] }, 3)
+  assert.deepEqual(laid.cells.flat(), cells)
+})
+
+test("visible space styles preserve word boundaries and every styled cell", () => {
+  for (const style of [{ underline: true }, { reverse: true }, { bg: "#ff0000" }]) {
+    const cells = [..."alpha beta gamma delta"].map(cell)
+    for (const entry of cells) Object.assign(entry.style, style)
+    const laid = layoutGrid({ cols: cells.length, rows: 1, cells: [cells] }, 12)
+    assert.deepEqual(lines(laid), ["alpha beta", "gamma delta"])
+    assert.deepEqual(laid.cells.flat(), cells)
+  }
+})
+
+test("a styled separator at the width boundary does not split the following full-width word", () => {
+  for (const style of [{ underline: true }, { reverse: true }, { bg: "#ff0000" }]) {
+    const cells = [..."hello world"].map(cell)
+    for (const entry of cells) Object.assign(entry.style, style)
+    const laid = layoutGrid({ cols: cells.length, rows: 1, cells: [cells] }, 5)
+    assert.deepEqual(
+      laid.cells.map((row) => row.map((entry) => entry.ch).join("")),
+      ["hello", " ", "world"],
+    )
+    assert.deepEqual(laid.cells.flat(), cells)
+  }
+})
+
 test("a long word is still folded over several lines", () => {
   const grid = screen(["x".repeat(129)])
   const laid = layoutGrid(grid, 51)
   assert.equal(lines(laid).length, 3)
+  assert.ok(laid.cells.every((row) => row.length <= 51))
 })

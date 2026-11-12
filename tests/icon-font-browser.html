@@ -5,8 +5,8 @@
 <link rel="stylesheet" href="/vendor/nerd-fonts/terminal-symbols/symbols.css">
 <style>
 body {
-  background: #282c35;
-  color: #dadee3;
+  background: #282c34;
+  color: #dcdfe4;
   font: 16px system-ui;
   margin: 24px;
 }
@@ -72,8 +72,13 @@ try {
       width === canvas.style.width && height === canvas.style.height,
       `${expectedFile}: layout dimensions stayed fixed`,
     )
+    // Font completion can repaint before Resource Timing exposes the download.
+    await until(() => requests().filter((entry) => entry.name.endsWith(expectedFile)).length >= retries)
     const fetched = requests().filter((entry) => entry.name.endsWith(expectedFile))
-    check(fetched.length === retries, `${expectedFile}: expected network request count ${retries}`)
+    check(
+      fetched.length === retries,
+      `${expectedFile}: expected network request count ${retries}, observed ${fetched.length}`,
+    )
   }
 
   await showIcon("A \ue0a0 中文 Z", "symbols-0e0.woff2")
@@ -94,10 +99,10 @@ try {
   const referenceContext = reference.getContext("2d")
   const ratio = devicePixelRatio || 1
   referenceContext.scale(ratio, ratio)
-  referenceContext.fillStyle = "#282c35"
+  referenceContext.fillStyle = "#282c34"
   referenceContext.fillRect(0, 0, reference.width / ratio, reference.height / ratio)
   referenceContext.font = '14px "Playback Reference"'
-  referenceContext.fillStyle = "#dadee3"
+  referenceContext.fillStyle = "#dcdfe4"
   const columnWidth = terminal.cellWidth
   referenceContext.fillText("⏵", 19, 14)
   referenceContext.fillText("⏵", 19 + columnWidth, 14)

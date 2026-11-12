@@ -1,8 +1,9 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
 import { DetailScreen } from "../web/dist/detail.js"
-import { lineEdit, TerminalInput } from "../web/dist/input.js"
+import { TerminalInput } from "../web/dist/input.js"
 import { mapKey } from "../web/dist/keys.js"
+import { lineEdit } from "../web/dist/line-edit.js"
 import { groupActions } from "../web/dist/send-queue.js"
 
 /**
@@ -160,10 +161,18 @@ function inputFixture(t) {
     globalThis.window = originalWindow
   })
   const field = new EventTarget()
+  let value = ""
+  Object.defineProperty(field, "value", {
+    get: () => value,
+    set: (next) => {
+      value = next
+      field.selectionStart = field.selectionEnd = next.length
+    },
+  })
   field.value = ""
-  field.selectionStart = 0
-  field.setSelectionRange = (start) => {
+  field.setSelectionRange = (start, end = start) => {
     field.selectionStart = start
+    field.selectionEnd = end
   }
   const canvas = new EventTarget()
   const sent = []
@@ -204,6 +213,65 @@ function inputFixture(t) {
     },
   }
 }
+
+test("line edits erase Unicode characters instead of UTF-16 code units", () => {
+  assert.deepEqual(lineEdit("a😀", 3, "a", 1), { backspaces: 1, killToEnd: false, text: "" })
+})
+
+test("backspace keeps supplementary characters intact", (t) => {
+  const f = inputFixture(t)
+  f.input.type("a😀")
+  f.press("Backspace")
+  assert.equal(f.field.value, "a")
+  assert.equal(f.field.selectionStart, 1)
+})
+
+test("arrows and pointer moves count complete Unicode characters", (t) => {
+  const f = inputFixture(t)
+  f.input.type("a😀b")
+  f.press("ArrowLeft")
+  f.press("ArrowLeft")
+  assert.equal(f.field.selectionStart, 1)
+  f.field.setSelectionRange(4)
+  f.field.dispatchEvent(new Event("click"))
+  f.tick()
+  assert.deepEqual(f.sent, [
+    ["A", "text", "a😀b"],
+    ["A", "keys", ["left", "left", "right", "right"]],
+  ])
+})
+
+test("editing in the middle restores the actual browser caret", (t) => {
+  const f = inputFixture(t)
+  f.input.type("abcd")
+  f.press("ArrowLeft")
+  f.press("ArrowLeft")
+  f.press("Backspace")
+  assert.equal(f.field.value, "acd")
+  assert.equal(f.field.selectionStart, 1)
+  f.input.type("X")
+  assert.equal(f.field.value, "aXcd")
+  assert.equal(f.field.selectionStart, 2)
+})
+
+test("Cmd navigation and editing shortcuts are not emitted as terminal keys", (t) => {
+  const f = inputFixture(t)
+  for (const name of ["Enter", "Tab", "Backspace", "ArrowLeft", "ArrowRight", "Home", "End"]) {
+    assert.equal(f.press(name, { metaKey: true }).defaultPrevented, false)
+  }
+  f.tick()
+  assert.deepEqual(f.sent, [])
+})
+
+test("IME confirmation keys are not sent to the terminal before composition ends", (t) => {
+  const f = inputFixture(t)
+  assert.equal(f.press("Enter", { isComposing: true }).defaultPrevented, false)
+  assert.equal(f.press("Enter", { keyCode: 229 }).defaultPrevented, false)
+  assert.equal(mapKey(key("Enter", { isComposing: true })), null)
+  assert.equal(mapKey(key("Enter", { keyCode: 229 })), null)
+  f.tick()
+  assert.deepEqual(f.sent, [])
+})
 
 test("field history keys reach the pane and clear the local line", (t) => {
   const f = inputFixture(t)
@@ -249,3 +317,73 @@ test("losing a pane flushes its pending input without targeting a null pane", (t
   f.tick()
   assert.deepEqual(f.sent, [["A", "text", "last"]])
 })
+
+test("Cmd navigation synchronizes the DOM caret before the next edit", (t) => {
+  const f = inputFixture(t)
+  f.input.type("abcd")
+  f.press("ArrowLeft", { metaKey: true })
+  f.field.setSelectionRange(0)
+  f.press("Backspace")
+  assert.equal(f.field.value, "abcd")
+  f.tick()
+  assert.deepEqual(f.sent, [
+    ["A", "text", "abcd"],
+    ["A", "keys", ["left", "left", "left", "left", "backspace"]],
+  ])
+})
+
+test("middle replacements rebuild the suffix and restore the remote caret", (t) => {
+  const f = inputFixture(t)
+  f.input.type("abcd")
+  f.field.setSelectionRange(1, 2)
+  f.field.dispatchEvent(new Event("click"))
+  f.field.value = "aXcd"
+  f.field.setSelectionRange(2)
+  f.field.dispatchEvent(new Event("input"))
+  f.tick()
+  assert.equal(f.field.selectionStart, 2)
+  assert.deepEqual(f.sent, [
+    ["A", "text", "abcd"],
+    ["A", "keys", ["left", "left", "left", "backspace", "ctrl+k"]],
+    ["A", "text", "aXcd"],
+    ["A", "keys", ["left", "left"]],
+  ])
+})
+
+test("backspace leaves selected text to the browser input event", (t) => {
+  const f = inputFixture(t)
+  f.input.type("a😀bc")
+  f.field.setSelectionRange(1, 4)
+  f.field.dispatchEvent(new Event("click"))
+  assert.equal(f.press("Backspace").defaultPrevented, false)
+  assert.equal(f.field.value, "a😀bc")
+  f.field.value = "ac"
+  f.field.setSelectionRange(1)
+  f.field.dispatchEvent(new Event("input"))
+  f.tick()
+  assert.deepEqual(f.sent, [
+    ["A", "text", "a😀bc"],
+    ["A", "keys", ["left", "left", "left", "backspace", "ctrl+k"]],
+    ["A", "text", "ac"],
+    ["A", "keys", ["left"]],
+  ])
+})
+
+for (const direction of ["ArrowLeft", "ArrowRight"]) {
+  test(`selection collapses to its boundary for ${direction}`, (t) => {
+    const f = inputFixture(t)
+    f.input.type("ab😀cd")
+    f.field.setSelectionRange(0, 6)
+    f.field.dispatchEvent(new Event("keyup"))
+    f.press(direction)
+    assert.equal(f.field.selectionStart, direction === "ArrowLeft" ? 0 : 6)
+    assert.equal(f.field.selectionEnd, f.field.selectionStart)
+    f.tick()
+    const moves = new Array(5).fill("left")
+    if (direction === "ArrowRight") moves.push(...new Array(5).fill("right"))
+    assert.deepEqual(f.sent, [
+      ["A", "text", "ab😀cd"],
+      ["A", "keys", moves],
+    ])
+  })
+}

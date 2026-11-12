@@ -35,7 +35,7 @@ const NAMED: Record<string, string> = {
 const ARROWS = new Set(["up", "down", "left", "right"])
 
 export function mapKey(event: KeyboardEvent): KeyAction | null {
-  if (event.metaKey) {
+  if (event.metaKey || event.isComposing || event.keyCode === 229) {
     // The shortcuts of the browser stay with the browser.
     return null
   }

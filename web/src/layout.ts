@@ -27,7 +27,7 @@ function blank(): Cell {
 }
 
 function isBlank(cell: Cell | undefined): boolean {
-  return cell === undefined || cell.ch === " " || cell.ch.length === 0
+  return cell === undefined || (cell.ch === " " && cell.style.bg === "" && !cell.style.underline && !cell.style.reverse)
 }
 
 /**
@@ -106,45 +106,39 @@ function prepareRow(cells: Cell[]): Cell[] {
  */
 function wrap(cells: Cell[], width: number, hanging: number): Cell[][] {
   const lines: Cell[][] = []
-  let line: Cell[] = []
-  let limit = width
-  for (const cell of cells) {
-    line.push(cell)
-    if (line.length <= limit) {
-      continue
-    }
-    // Break at the last blank, so that a word is not cut in half.
-    let at = -1
-    for (let index = line.length - 1; index >= 0; index -= 1) {
-      if (isBlank(line[index])) {
-        at = index
-        break
+  let start = 0
+  while (start < cells.length) {
+    // Leave room for a wide glyph even when the desktop indent is very deep.
+    const indent = lines.length === 0 ? 0 : Math.min(hanging, Math.max(0, width - 2))
+    const limit = width - indent
+    let end = Math.min(cells.length, start + limit)
+    let next = end
+    if (end < cells.length) {
+      // A wide glyph and its trailing column must move together.
+      if (cells[end]?.ch === "") end -= 1
+      if (end === start) end = Math.min(cells.length, start + 2)
+      next = end
+      for (let index = end; index >= start; index -= 1) {
+        const separator = cells[index]
+        if (index === start && isBlank(separator)) continue
+        if (separator?.ch === " ") {
+          if (isBlank(separator)) {
+            end = index
+            next = index + 1
+          } else {
+            // Keep a visible separator on either side of the word boundary.
+            end = index < start + limit ? index + 1 : index
+            next = end
+          }
+          break
+        }
       }
     }
-    if (at > 0) {
-      const rest = line.slice(at + 1)
-      lines.push(line.slice(0, at))
-      line = rest
-    } else {
-      lines.push(line)
-      line = []
-    }
-    limit = width - hanging
+    const padding = Array.from({ length: indent }, blank)
+    lines.push(padding.concat(cells.slice(start, end)))
+    start = next
   }
-  if (line.length > 0) {
-    lines.push(line)
-  }
-  // Every line but the first one is indented.
-  return lines.map((entry, index) => {
-    if (index === 0 || hanging === 0) {
-      return entry
-    }
-    const indent: Cell[] = []
-    for (let i = 0; i < hanging; i += 1) {
-      indent.push(blank())
-    }
-    return indent.concat(entry)
-  })
+  return lines
 }
 
 /**

@@ -1,0 +1,111 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Page activity checks</title>
+<style>
+body {
+  font: 15px system-ui;
+  margin: 20px;
+  background: #f8fafc;
+  color: #1a1a1a;
+}
+iframe {
+  width: 390px;
+  height: 560px;
+  border: 1px solid #c9cdd3;
+}
+pre {
+  white-space: pre-wrap;
+  line-height: 1.6;
+}
+</style>
+<h1>Page activity checks</h1>
+<p>Isolated mock connection; visibility events are controlled by this fixture.</p>
+<iframe title="Test app" src="/?clean=1"></iframe>
+<pre id="result">Running…</pre>
+<script type="module">
+const pairing = "__TEST_PAIRING__"
+const frame = document.querySelector("iframe")
+const result = document.querySelector("#result")
+const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+const stats = async () => (await fetch("/check/stats")).json()
+const lines = []
+function check(value, message) {
+  if (!value) throw new Error(message)
+  lines.push(`PASS ${message}`)
+  result.textContent = lines.join("\n")
+}
+async function until(predicate) {
+  const deadline = Date.now() + 15000
+  while (!(await predicate())) {
+    if (Date.now() >= deadline) throw new Error("Timed out waiting for app state")
+    await pause(40)
+  }
+}
+try {
+  // The list is visible in the static HTML before main.ts binds the controls.
+  await until(() => frame.contentDocument?.querySelector("#pair-panel")?.classList.contains("hidden") === false)
+  let doc = frame.contentDocument
+  let visibility = "visible"
+  function setVisibility(value) {
+    visibility = value
+    doc.dispatchEvent(new Event("visibilitychange"))
+  }
+  Object.defineProperty(doc, "visibilityState", { configurable: true, get: () => visibility })
+  doc.querySelector("#pair-input").value = pairing
+  doc.querySelector("#pair-apply").click()
+  await until(() => doc.querySelector("#statusbar").textContent === "connected to the desktop")
+  const paired = await stats()
+  await pause(3200)
+  const list = await stats()
+  check(
+    list.stateReads > paired.stateReads && list.paneReads === 0,
+    "List refreshes state without reading terminal snapshots",
+  )
+  doc.querySelectorAll(".session-row").item(1).click()
+  await until(async () => (await stats()).paneReads > 0)
+  check(!doc.querySelector("#screen-detail").classList.contains("hidden"), "Opening a pane starts terminal reads")
+  setVisibility("hidden")
+  await pause(200)
+  const hidden = await stats()
+  await pause(3200)
+  const idle = await stats()
+  check(
+    idle.stateReads === hidden.stateReads && idle.paneReads === hidden.paneReads,
+    "Hidden page starts no state or terminal polls",
+  )
+  check(
+    idle.connections === hidden.connections && idle.connections > 0,
+    "Background pause keeps the encrypted connection open",
+  )
+  setVisibility("visible")
+  await until(async () => {
+    const next = await stats()
+    return next.stateReads > idle.stateReads && next.paneReads > idle.paneReads
+  })
+  check(true, "Returning to the foreground refreshes state and terminal output")
+  doc.querySelector("#detail-back").click()
+  await pause(200)
+  const returned = await stats()
+  await pause(3200)
+  const after = await stats()
+  check(
+    after.stateReads > returned.stateReads && after.paneReads === returned.paneReads,
+    "Returning to the list stops terminal reads while state stays live",
+  )
+  const beforeReload = await stats()
+  frame.contentWindow.location.reload()
+  await until(
+    () =>
+      frame.contentDocument !== doc &&
+      frame.contentDocument?.querySelector("#screen-detail")?.classList.contains("hidden") === false,
+  )
+  doc = frame.contentDocument
+  await until(async () => (await stats()).paneReads > beforeReload.paneReads)
+  check(true, "Reload restores the paired pane and reads it after showing the detail view")
+  result.textContent += "\n\nALL CHECKS PASSED"
+  document.title = "PASS — Page activity checks"
+} catch (error) {
+  result.textContent += `\n\nFAIL ${error.message}`
+  document.title = "FAIL — Page activity checks"
+}
+</script>

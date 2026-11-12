@@ -1,0 +1,110 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Terminal browser checks</title>
+<link rel="stylesheet" href="/vendor/nerd-fonts/symbols.css">
+<link rel="stylesheet" href="/vendor/nerd-fonts/terminal-symbols/symbols.css">
+<style>
+body {
+  font: 15px system-ui;
+  margin: 20px;
+  background: #f8fafc;
+  color: #1a1a1a;
+}
+#host {
+  width: 390px;
+  height: 190px;
+  overflow: auto;
+  border: 1px solid #c9cdd3;
+}
+canvas {
+  display: block;
+}
+#result {
+  white-space: pre-wrap;
+  line-height: 1.6;
+}
+</style>
+<h1>Terminal browser checks</h1>
+<div id="host"><canvas id="terminal"></canvas></div>
+<pre id="result">Running…</pre>
+<script type="module">
+import { TerminalView } from "/dist/terminal.js"
+
+const host = document.querySelector("#host")
+const canvas = document.querySelector("#terminal")
+const result = document.querySelector("#result")
+const ctx = canvas.getContext("2d", { willReadFrequently: true })
+const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+const lines = []
+function check(value, message) {
+  if (!value) throw new Error(message)
+  lines.push(`PASS ${message}`)
+  result.textContent = lines.join("\n")
+}
+function pixel(x, y) {
+  return Array.from(ctx.getImageData(Math.floor(x * devicePixelRatio), Math.floor(y * devicePixelRatio), 1, 1).data)
+    .slice(0, 3)
+    .join(",")
+}
+try {
+  const view = new TerminalView(canvas)
+  await view.kernel.load()
+  let paints = 0
+  const render = view.render.bind(view)
+  view.render = () => {
+    paints += 1
+    render()
+  }
+  const text = "\x1b[31mRed\x1b[0m 中文 \x1b[4munderline\x1b[0m \x1b[38;2;12;34;56mRGB"
+  await view.setContent(text, 10)
+  await pause(80)
+  check(pixel(0, 0) === "40,44,52", "Dark Canvas uses Alma Android background")
+  await view.setTheme("light")
+  check(pixel(0, 0) === "255,255,255", "Static Canvas repaints immediately in Light")
+  const before = paints
+  const started = performance.now()
+  for (let index = 0; index < 100; index += 1) await view.setContent(text, 10)
+  check(
+    paints === before,
+    `100 unchanged snapshots cause zero redraws (${(performance.now() - started).toFixed(2)} ms)`,
+  )
+  const long = Array.from(
+    { length: 80 },
+    (_, index) => `row ${index}${" normal-size Chinese 中文 and long text ".repeat(3)}`,
+  ).join("\n")
+  await view.setContent(long, 24)
+  await pause(80)
+  check(host.scrollWidth <= host.clientWidth, "390px Wrap keeps normal-size text without horizontal overflow")
+  host.scrollTop = 19 * 10
+  await pause(180)
+  const anchor = host.scrollTop
+  await view.setTheme("dark")
+  await pause(80)
+  check(Math.abs(host.scrollTop - anchor) < 1, "Appearance change preserves a reader's scroll position")
+  await view.setContent(`${long}\nnew output`, 24)
+  await pause(80)
+  check(Math.abs(host.scrollTop - anchor) < 1, "New output preserves the reading anchor")
+  view.setMode("original")
+  check(host.scrollWidth > host.clientWidth, "Original Width retains horizontal scrolling")
+  view.setMode("shrink")
+  await pause(180)
+  check(host.scrollWidth <= host.clientWidth, "Shrink to Fit stays within the phone width")
+  host.scrollTop = 0
+  await pause(180)
+  view.followBottom()
+  await view.setContent(`${long}\nnew output\nlatest output`, 24)
+  await pause(180)
+  check(
+    Math.abs(host.scrollHeight - host.clientHeight - host.scrollTop) < 1,
+    "Shrink resumes following the latest output",
+  )
+  view.setMode("wrap")
+  await view.setTheme("light")
+  await view.setContent(text, 10)
+  result.textContent += "\n\nALL CHECKS PASSED"
+  document.title = "PASS — Terminal browser checks"
+} catch (error) {
+  result.textContent += `\n\nFAIL ${error.message}`
+  document.title = "FAIL — Terminal browser checks"
+}
+</script>
