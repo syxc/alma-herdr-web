@@ -916,11 +916,6 @@ button.active {
   background: var(--surface);
   box-shadow: 0 8px 24px var(--popover-shadow);
 }
-.extra-keys legend {
-  padding: 0 6px;
-  color: var(--fg-muted);
-  font-size: 12px;
-}
 .extra-keys small {
   display: block;
   color: var(--fg-muted);
@@ -978,12 +973,15 @@ button.active {
   color: var(--fg-muted);
 }
 .input-copy {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
   flex: 1;
   min-width: 0;
   padding: 2px 8px 2px 0;
   overflow: hidden;
 }
-.input-copy label {
+.input-copy #input-mode {
   display: block;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -992,6 +990,9 @@ button.active {
   font-size: 11px;
   font-weight: 500;
   line-height: 14px;
+}
+.input-copy #input-mode:empty {
+  display: none;
 }
 .command-bar input {
   display: block;
@@ -1031,9 +1032,6 @@ button.active {
   background: transparent;
   color: var(--fg-muted);
   font-size: 20px;
-}
-.input-action[aria-expanded="true"] {
-  color: var(--fg);
 }
 .app-bar .round-outline,
 .app-bar .pill-button,
@@ -1192,8 +1190,18 @@ button.active {
   margin-top: 6px;
 }
 .tree-panes {
+  position: relative;
   margin: 0 0 0 14px;
+  border-left: 1px solid transparent;
+}
+.tree-panes::before {
+  content: "";
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  left: -1px;
   border-left: 1px solid var(--line-soft);
+  pointer-events: none;
 }
 .row {
   display: flex;
@@ -1205,7 +1213,7 @@ button.active {
   margin: 0;
   padding: 8px 10px;
   border: 0;
-  border-radius: 8px;
+  border-radius: 0;
   background: transparent;
   color: var(--fg);
   text-align: left;
@@ -1230,6 +1238,27 @@ button.active {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.workspace-heading {
+  display: flex;
+  align-items: center;
+}
+.workspace-heading > .row {
+  flex: 1;
+  width: 0;
+  padding-right: 2px;
+}
+.workspace-toggle {
+  display: grid;
+  place-items: center end;
+  flex: none;
+  width: 44px;
+  min-height: 44px;
+  padding: 0 6px 0 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--fg-muted);
 }
 .row.workspace {
   min-height: 60px;
@@ -1261,16 +1290,18 @@ button.active {
   color: var(--fg-muted);
 }
 .row.pane {
+  border-radius: 4px;
   font-size: 14px;
   font-weight: 400;
 }
 .row.pane.selected {
-  background: var(--selection);
-  box-shadow: inset 2px 0 var(--accent-text);
+  position: relative;
+  width: calc(100% + 1px);
+  margin-left: -1px;
+  padding-left: 11px;
+  border-radius: 4px;
+  background: linear-gradient(var(--selection), var(--selection)), var(--bg);
   color: var(--fg-strong);
-}
-.row.pane.selected .tree-kind {
-  color: var(--accent-text);
 }
 .row:focus-visible {
   outline-offset: -2px;

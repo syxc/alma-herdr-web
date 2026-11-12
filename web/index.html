@@ -286,6 +286,28 @@
             </div>
             <fieldset id="extra-keys" class="extra-keys hidden" aria-label="Extra terminal keys"></fieldset>
             <div id="command-bar" class="command-bar">
+              <button
+                id="keys-toggle"
+                class="input-action"
+                type="button"
+                aria-label="Hide terminal shortcuts"
+                aria-controls="shortcut-bar"
+                aria-expanded="true"
+              >
+                <svg
+                  viewBox="0 0 24 24"
+                  width="20"
+                  height="20"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M8 8V5a3 3 0 1 0-3 3h14a3 3 0 1 0-3-3v14a3 3 0 1 0 3-3H5a3 3 0 1 0 3 3V8" />
+                </svg>
+              </button>
               <div class="realtime-input">
                 <button id="keyboard-toggle" class="keyboard-inline" type="button" aria-label="Show the keyboard">
                   <svg
@@ -308,7 +330,7 @@
                   </svg>
                 </button>
                 <div class="input-copy">
-                  <label id="input-mode" for="command-input">Real-time input</label>
+                  <span id="input-mode" role="status" aria-live="polite"></span>
                   <input
                     id="command-input"
                     type="text"
@@ -322,16 +344,6 @@
                   >
                 </div>
               </div>
-              <button
-                id="keys-toggle"
-                class="input-action"
-                type="button"
-                aria-label="Hide terminal shortcuts"
-                aria-controls="shortcut-bar"
-                aria-expanded="true"
-              >
-                <span aria-hidden="true">⌘</span>
-              </button>
               <button id="command-send" class="input-action" type="button" aria-label="Send Enter to the pane">
                 <svg
                   viewBox="0 0 24 24"

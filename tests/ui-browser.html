@@ -252,6 +252,31 @@
                 ].every((button) => style(button).fontSize === "20px"),
               `${theme} ${width}px: compact shortcuts keep touch targets and larger symbols`,
             )
+            const inputCard = doc.querySelector(".realtime-input").getBoundingClientRect()
+            const toggle = el("keys-toggle").getBoundingClientRect()
+            const send = el("command-send").getBoundingClientRect()
+            check(
+              toggle.right <= inputCard.left &&
+                send.left >= inputCard.right &&
+                toggle.height >= 44 &&
+                send.height >= 44 &&
+                el("input-mode").textContent === "" &&
+                style(el("input-mode")).display === "none" &&
+                el("command-input").getAttribute("aria-label").length > 0,
+              `${theme} ${width}px: shortcuts toggle and Enter flank the single-line input`,
+            )
+            const extras = el("extra-keys")
+            extras.classList.remove("hidden")
+            await frame()
+            check(
+              extras.querySelector("legend") === null &&
+                extras.getAttribute("aria-label").length > 0 &&
+                extras.getBoundingClientRect().left >= 0 &&
+                extras.getBoundingClientRect().right <= width &&
+                extras.querySelector("label").getBoundingClientRect().top >= extras.getBoundingClientRect().top + 8,
+              `${theme} ${width}px: extra keys have no visible title and stay inside their popover`,
+            )
+            extras.classList.add("hidden")
             el("command-input").focus()
             check(
               style(doc.querySelector(".realtime-input")).borderTopWidth === "1px" &&
@@ -376,13 +401,16 @@
       ],
     }
     const picks = []
-    renderWorkspaceTree(el("tree"), {
+    const collapsedWorkspaces = new Set()
+    const treeOptions = {
       snapshot: treeState,
       selectedPaneId: "p2",
+      collapsedWorkspaces,
       onWorkspace: (id) => picks.push(["workspace", id]),
       onTab: (id) => picks.push(["tab", id]),
       onPane: (id) => picks.push(["pane", id]),
-    })
+    }
+    renderWorkspaceTree(el("tree"), treeOptions)
     check(
       JSON.stringify([...el("tree").querySelectorAll(".pane .label")].map((node) => node.textContent)) ===
         JSON.stringify(["wB:p1", "almaprobe echo", "wB:p3", "A very long pane title that must be truncated"]),
@@ -395,6 +423,37 @@
         el("tree").querySelector(".workspace").getAttribute("aria-label").includes("2 tabs"),
       "Workspace tree separates workspaces, tabs and split panes with a labelled count",
     )
+    const workspaceSection = (id) => el("tree").querySelector(`[data-workspace="${id}"]`).closest(".tree-workspace")
+    workspaceSection("w1").querySelector(".workspace-toggle").click()
+    check(
+      workspaceSection("w1").querySelector(".tree-tabs").classList.contains("hidden") &&
+        workspaceSection("w1").querySelector(".workspace-toggle").getAttribute("aria-expanded") === "false" &&
+        workspaceSection("w1").querySelector(".count").textContent === "2 tabs" &&
+        !workspaceSection("w2").querySelector(".tree-tabs").classList.contains("hidden") &&
+        picks.length === 0,
+      "Collapsing a workspace keeps its heading, count and other workspaces without selecting a terminal",
+    )
+    workspaceSection("w2").querySelector(".workspace-toggle").click()
+    renderWorkspaceTree(el("tree"), treeOptions)
+    check(
+      [...el("tree").querySelectorAll(".tree-tabs")].every((tabs) => tabs.classList.contains("hidden")) &&
+        el("tree").querySelector('[data-pane="p2"]').getAttribute("aria-current") === "true",
+      "Workspace folds and the selected pane survive a state redraw",
+    )
+    workspaceSection("w1").querySelector(".workspace-toggle").click()
+    check(
+      !workspaceSection("w1").querySelector(".tree-tabs").classList.contains("hidden") &&
+        workspaceSection("w2").querySelector(".tree-tabs").classList.contains("hidden") &&
+        workspaceSection("w1").querySelector(".workspace-toggle").getAttribute("aria-expanded") === "true",
+      "Each workspace expands independently with an accessible state",
+    )
+    workspaceSection("w2").querySelector(".workspace").click()
+    check(
+      !workspaceSection("w2").querySelector(".tree-tabs").classList.contains("hidden") &&
+        JSON.stringify(picks) === JSON.stringify([["workspace", "w2"]]),
+      "Choosing a workspace name expands it and retains its original navigation action",
+    )
+    picks.length = 0
     const chosen = el("tree").querySelector('[data-pane="p2"]')
     check(
       chosen.getAttribute("aria-current") === "true" &&
@@ -418,6 +477,16 @@
         show(theme, width, "detail")
         el("sidebar").classList.add("open")
         await frame()
+        check(
+          [...el("tree").querySelectorAll(".tree-workspace")].every((workspace) => {
+            const icon = workspace.querySelector(".workspace-toggle svg").getBoundingClientRect()
+            return [...workspace.querySelectorAll(".tab .dot, .pane .dot")].every((dot) => {
+              const bounds = dot.getBoundingClientRect()
+              return Math.abs(icon.left + icon.width / 2 - bounds.left - bounds.width / 2) < 0.5
+            })
+          }),
+          `${theme} ${width}px tree: workspace toggle icons align with tab and pane status dots`,
+        )
         const rows = [...el("tree").querySelectorAll("button")]
         check(
           rows.every((button) => button.offsetHeight >= 44) && el("tree").scrollWidth <= el("tree").clientWidth,
@@ -426,9 +495,11 @@
         check(
           Number.parseFloat(style(chosen).fontSize) >
             Number.parseFloat(style(el("tree").querySelector(".tab")).fontSize) &&
-            style(chosen).boxShadow !== "none" &&
+            style(chosen).boxShadow === "none" &&
+            style(chosen).borderRadius === "4px" &&
+            style(chosen).borderLeftWidth === "0px" &&
             style(chosen).backgroundColor !== "rgba(0, 0, 0, 0)",
-          `${theme} ${width}px tree: pane names and current selection have clear visual priority`,
+          `${theme} ${width}px tree: selection has a subtle 4px radius with no accent rail or shadow`,
         )
         check(
           style(el("tree").querySelector(".tree-tabs")).borderLeftWidth === "1px" &&
@@ -439,6 +510,30 @@
                 label.getBoundingClientRect().right <= el("sidebar").getBoundingClientRect().right,
             ),
           `${theme} ${width}px tree: hierarchy guides and long title truncation stay within bounds`,
+        )
+        check(
+          [...el("tree").querySelectorAll(".tree-panes")].every((group) => {
+            const guide = style(group, "::before")
+            return (
+              guide.top === "4px" &&
+              guide.bottom === "4px" &&
+              guide.borderLeftWidth === "1px" &&
+              guide.pointerEvents === "none" &&
+              group.querySelector(".pane").getBoundingClientRect().left - group.getBoundingClientRect().left === 1
+            )
+          }),
+          `${theme} ${width}px tree: guides stop 4px before the corners without adding a side gap`,
+        )
+        const group = chosen.closest(".tree-panes")
+        const peer = group.querySelector(".pane:not(.selected)")
+        check(
+          chosen.getBoundingClientRect().left === group.getBoundingClientRect().left &&
+            chosen.getBoundingClientRect().right === peer.getBoundingClientRect().right &&
+            chosen.querySelector(".tree-copy").getBoundingClientRect().left ===
+              peer.querySelector(".tree-copy").getBoundingClientRect().left &&
+            style(chosen).position === "relative" &&
+            style(chosen).backgroundImage.includes("linear-gradient"),
+          `${theme} ${width}px tree: selection covers the guide without moving its text or right edge`,
         )
         el("tree").scrollTop = el("tree").scrollHeight
         check(

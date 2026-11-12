@@ -105,6 +105,7 @@ let pollBusy = false
 let pollTimer: number | null = null
 let connectionGeneration = 0
 let lastSignature = ""
+const collapsedWorkspaces = new Set<string>()
 
 const SELECTION_KEY = "alma-herdr-web:selection"
 
@@ -220,6 +221,7 @@ function renderTree(): void {
   renderWorkspaceTree(tree, {
     snapshot,
     selectedPaneId,
+    collapsedWorkspaces,
     onWorkspace: (id) => void selectWorkspace(id),
     onTab: (id) => void selectTab(id),
     onPane: (id) => void selectPane(id),
@@ -280,6 +282,7 @@ async function selectPane(paneId: string, focusDesktop = true): Promise<void> {
   if (pane !== null) {
     // The choice survives a reload.
     writeSelection({ paneId: pane.pane_id, tabId: pane.tab_id })
+    collapsedWorkspaces.delete(pane.workspace_id)
   }
   renderTree()
   renderList()
@@ -390,6 +393,7 @@ function renderListMenu(): void {
       run: () => {
         forgetPairing()
         activePairing = null
+        collapsedWorkspaces.clear()
         reconnectNeeded = false
         closeRemote()
         connectionGeneration += 1
@@ -741,6 +745,7 @@ async function applyPairing(source: string | Pairing): Promise<boolean> {
     setStatus("that link carries no pairing data", true)
     return false
   }
+  if (activePairing !== pairing) collapsedWorkspaces.clear()
   activePairing = pairing
   pairingBusy = true
   newTerminalMenu.update()

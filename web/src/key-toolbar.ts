@@ -171,9 +171,6 @@ export class KeyToolbar {
       else this.addKey(label, key, hint)
     }
     this.extraMenu.replaceChildren()
-    const legend = document.createElement("legend")
-    legend.textContent = "Extra shortcuts"
-    this.extraMenu.append(legend)
     for (const [label, key, hint] of EXTRA_KEYS) {
       const item = document.createElement("label")
       item.dataset.keyLabel = label
@@ -282,7 +279,7 @@ export class KeyToolbar {
     for (const [key, button] of this.modifierButtons)
       button.setAttribute("aria-pressed", String(this.modifiers.has(key)))
     const label = [...this.modifiers].map((key) => key.charAt(0).toUpperCase() + key.slice(1)).join("+")
-    this.modeLabel.textContent = label.length > 0 ? `Real-time input · ${label}` : "Real-time input"
+    this.modeLabel.textContent = label
   }
 
   private async paste(): Promise<void> {
