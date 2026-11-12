@@ -18,7 +18,10 @@ mock.answer = async (socket, frame, key) => {
   if (request.method === "workspace.list") stateReads += 1
   if (request.method === "pane.read") {
     reads += 1
-    mock.paneText.set("w1:p1", `recovery-check 中文 \ue0a0 \u{f0766} update ${reads}`)
+    mock.paneText.set(
+      "w1:p1",
+      `\x1b[48;2;240;240;240;38;2;0;0;0mrecovery-check \x1b[0m中文 \ue0a0 \u{f0766} update ${reads}`,
+    )
   }
   return answer(socket, frame, key)
 }
@@ -46,9 +49,16 @@ const server = createServer(async (request, response) => {
       .end(JSON.stringify({ stateReads, paneReads: reads, connections: mock.connections.size }))
     return
   }
-  if (path === "/check/activity" || path === "/check/input") {
+  if (path === "/check/activity" || path === "/check/input" || path === "/check/ui") {
     const fixture = await readFile(
-      resolve(root, path === "/check/input" ? "tests/input-browser.html" : "tests/activity-browser.html"),
+      resolve(
+        root,
+        path === "/check/ui"
+          ? "tests/ui-browser.html"
+          : path === "/check/input"
+            ? "tests/input-browser.html"
+            : "tests/activity-browser.html",
+      ),
       "utf8",
     )
     response

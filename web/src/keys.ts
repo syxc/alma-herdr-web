@@ -49,7 +49,9 @@ export function mapKey(event: KeyboardEvent): KeyAction | null {
       return { kind: "keys", keys: [named] }
     }
     if (event.ctrlKey || event.altKey || event.shiftKey) {
-      const prefix = event.ctrlKey ? "ctrl" : event.altKey ? "alt" : "shift"
+      const prefix = [event.ctrlKey && "ctrl", event.altKey && "alt", event.shiftKey && "shift"]
+        .filter(Boolean)
+        .join("+")
       if (!ARROWS.has(named)) {
         return { kind: "keys", keys: [named] }
       }
@@ -63,7 +65,7 @@ export function mapKey(event: KeyboardEvent): KeyAction | null {
   if (event.key.length === 1) {
     const lower = event.key.toLowerCase()
     if (event.ctrlKey) {
-      return { kind: "keys", keys: [`ctrl+${lower}`] }
+      return { kind: "keys", keys: [`ctrl+${event.altKey ? "alt+" : ""}${lower}`] }
     }
     if (event.altKey) {
       return { kind: "keys", keys: [`alt+${lower}`] }

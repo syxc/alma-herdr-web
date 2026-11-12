@@ -180,6 +180,10 @@ function inputFixture(t) {
   Object.assign(screen, {
     pane: { pane_id: "A", agent_status: "idle" },
     inputPaneId: "A",
+    keyToolbar: { reset() {}, setEnabled() {} },
+    commandInput: field,
+    commandSend: {},
+    keyboardToggle: {},
     tabNumber: {},
     detailStatus: {},
     detailTitle: {},
@@ -387,3 +391,84 @@ for (const direction of ["ArrowLeft", "ArrowRight"]) {
     ])
   })
 }
+
+test("shortcut chips apply the same editing state as the physical keys", (t) => {
+  const f = inputFixture(t)
+  f.input.type("one two")
+  f.input.sendSpecial(["ctrl+w"])
+  assert.equal(f.field.value, "one ")
+  f.input.sendSpecial(["ctrl+a"])
+  assert.equal(f.field.selectionStart, 0)
+  f.input.sendSpecial(["ctrl+e", "backspace"])
+  assert.equal(f.field.value, "one")
+  f.input.sendSpecial(["ctrl+u"])
+  assert.equal(f.field.value, "")
+  f.input.type("next")
+  f.input.sendSpecial(["enter"])
+  assert.equal(f.field.value, "")
+  f.tick()
+  assert.deepEqual(f.sent, [
+    ["A", "text", "one two"],
+    ["A", "keys", ["ctrl+w", "ctrl+a", "ctrl+e", "backspace", "ctrl+u"]],
+    ["A", "text", "next"],
+    ["A", "keys", ["enter"]],
+  ])
+})
+
+test("pasted text replaces a selected range and preserves the suffix", (t) => {
+  const f = inputFixture(t)
+  f.input.type("a😀bc")
+  f.field.setSelectionRange(1, 3)
+  f.input.type("X")
+  assert.equal(f.field.value, "aXbc")
+  assert.equal(f.field.selectionStart, 2)
+  f.tick()
+  assert.deepEqual(f.sent, [
+    ["A", "text", "a😀bc"],
+    ["A", "keys", ["left", "left", "left", "backspace", "ctrl+k"]],
+    ["A", "text", "aXbc"],
+    ["A", "keys", ["left", "left"]],
+  ])
+})
+
+test("shortcut arrow sequences retain every movement and modifier", (t) => {
+  const f = inputFixture(t)
+  f.input.type("one 😀")
+  f.input.sendSpecial(["left", "left"])
+  assert.equal(f.field.selectionStart, 3)
+  f.input.sendSpecial(["ctrl+right"])
+  assert.equal(f.field.selectionStart, 6)
+  f.input.sendSpecial(["alt+left"])
+  assert.equal(f.field.selectionStart, 4)
+  f.tick()
+  assert.deepEqual(f.sent, [
+    ["A", "text", "one 😀"],
+    ["A", "keys", ["left", "left", "ctrl+right", "alt+left"]],
+  ])
+  assert.deepEqual(mapKey(key("ArrowLeft", { ctrlKey: true, altKey: true, shiftKey: true })), {
+    kind: "keys",
+    keys: ["ctrl+alt+shift+left"],
+  })
+})
+
+test("multiline clipboard text is sent intact and clears the unknown local line", (t) => {
+  const f = inputFixture(t)
+  f.input.type("first\nsecond")
+  assert.equal(f.field.value, "")
+  f.tick()
+  assert.deepEqual(f.sent, [["A", "text", "first\nsecond"]])
+})
+
+test("multiline paste removes selected text before sending the clipboard", (t) => {
+  const f = inputFixture(t)
+  f.input.type("abcd")
+  f.field.setSelectionRange(1, 3)
+  f.input.type("X\nY")
+  f.tick()
+  assert.equal(f.field.value, "")
+  assert.deepEqual(f.sent, [
+    ["A", "text", "abcd"],
+    ["A", "keys", ["left", "left", "left", "right", "right", "backspace", "backspace"]],
+    ["A", "text", "X\nY"],
+  ])
+})

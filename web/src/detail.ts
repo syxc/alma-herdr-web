@@ -3,6 +3,7 @@ import type { PaneRecord, SessionSnapshot } from "./api.js"
 import { appendAppearanceControl } from "./appearance.js"
 import { ICONS } from "./icons.js"
 import { TerminalInput } from "./input.js"
+import { KeyToolbar } from "./key-toolbar.js"
 import { statusClass } from "./session-list.js"
 import type { FitMode } from "./terminal.js"
 
@@ -16,18 +17,8 @@ export interface DetailCallbacks {
   status(message: string, isError: boolean): void
   setFitMode(mode: FitMode): void
   paneSize(): { cols: number; rows: number }
+  connectionInfo?(): string
 }
-
-const KEY_CHIPS: { label: string; keys: string[] }[] = [
-  { label: "esc", keys: ["esc"] },
-  { label: "`", keys: [] },
-  { label: "^C", keys: ["ctrl+c"] },
-  { label: "⇥", keys: ["tab"] },
-  { label: "⇧⇥", keys: ["shift+tab"] },
-  { label: "→", keys: ["right"] },
-  { label: "↑", keys: ["up"] },
-  { label: "↓", keys: ["down"] },
-]
 
 const MODE_KEY = "alma-herdr-web:fit-mode"
 
@@ -70,11 +61,13 @@ export class DetailScreen {
   private readonly detailStatus = el<HTMLSpanElement>("detail-status")
   private readonly detailTitle = el<HTMLSpanElement>("detail-title")
   private readonly keyChips = el<HTMLDivElement>("key-chips")
+  private readonly shortcutBar = el<HTMLDivElement>("shortcut-bar")
   private readonly commandInput = el<HTMLInputElement>("command-input")
   private readonly commandSend = el<HTMLButtonElement>("command-send")
   private readonly keysToggle = el<HTMLButtonElement>("keys-toggle")
   private readonly keyboardToggle = el<HTMLButtonElement>("keyboard-toggle")
   private readonly canvas = el<HTMLCanvasElement>("terminal")
+  private readonly keyToolbar: KeyToolbar
   private readonly input: TerminalInput
   private inputPaneId: string | null = null
 
@@ -96,8 +89,20 @@ export class DetailScreen {
         }
       },
     })
+    this.keyToolbar = new KeyToolbar(
+      this.keyChips,
+      el("extra-keys"),
+      el("input-mode"),
+      this.input,
+      this.commandInput,
+      this.canvas,
+      this.actions.status,
+      () => {
+        this.closeActionMenu()
+        this.closeTabMenu()
+      },
+    )
     this.wire()
-    this.renderKeyChips()
   }
 
   private wire(): void {
@@ -111,6 +116,7 @@ export class DetailScreen {
     })
     el<HTMLButtonElement>("detail-more").addEventListener("click", () => {
       if (this.actionMenu.classList.contains("hidden")) {
+        this.keyToolbar.closeMenu()
         this.renderActionMenu()
         this.actionMenu.classList.remove("hidden")
         this.closeTabMenu()
@@ -121,6 +127,7 @@ export class DetailScreen {
 
     this.tabSwitch.addEventListener("click", () => {
       if (this.tabMenu.classList.contains("hidden")) {
+        this.keyToolbar.closeMenu()
         this.renderTabMenu()
         this.tabMenu.classList.remove("hidden")
         this.closeActionMenu()
@@ -130,7 +137,10 @@ export class DetailScreen {
     })
 
     this.keysToggle.addEventListener("click", () => {
-      this.keyChips.classList.toggle("hidden")
+      const visible = !this.shortcutBar.classList.toggle("hidden")
+      this.keysToggle.setAttribute("aria-expanded", String(visible))
+      this.keysToggle.setAttribute("aria-label", visible ? "Hide terminal shortcuts" : "Show terminal shortcuts")
+      this.keyToolbar.closeMenu()
     })
     this.keyboardToggle.addEventListener("click", () => {
       // The field is the input surface of the phone: every key it takes
@@ -138,8 +148,11 @@ export class DetailScreen {
       this.input.focusField()
     })
 
+    for (const button of [this.keysToggle, this.commandSend]) {
+      button.addEventListener("mousedown", (event) => event.preventDefault())
+    }
     this.commandSend.addEventListener("click", () => {
-      this.input.submit()
+      this.keyToolbar.submit()
     })
 
     this.canvas.addEventListener("mousedown", () => {
@@ -161,7 +174,7 @@ export class DetailScreen {
       if (target === null) {
         return
       }
-      if (this.actionMenu.contains(target) || this.tabMenu.contains(target)) {
+      if (this.actionMenu.contains(target) || this.tabMenu.contains(target) || this.keyToolbar.contains(target)) {
         return
       }
       // The button that opens a menu must not close it again right away.
@@ -170,25 +183,6 @@ export class DetailScreen {
       }
       this.closeMenus()
     })
-  }
-
-  private renderKeyChips(): void {
-    this.keyChips.replaceChildren()
-    for (const chip of KEY_CHIPS) {
-      const button = document.createElement("button")
-      button.type = "button"
-      button.className = "key-chip"
-      button.textContent = chip.label
-      button.addEventListener("click", () => {
-        if (chip.keys.length === 0) {
-          // The chip holds a character, such as the backtick.
-          this.input.type(chip.label)
-          return
-        }
-        this.input.sendSpecial(chip.keys)
-      })
-      this.keyChips.appendChild(button)
-    }
   }
 
   private renderTabMenu(): void {
@@ -228,11 +222,18 @@ export class DetailScreen {
   }
 
   private renderActionMenu(): void {
-    const signature = JSON.stringify([this.mode, this.pane?.pane_id, this.pane?.agent, this.pane?.agent_session])
+    const connection = this.actions.connectionInfo?.() ?? ""
+    const signature = JSON.stringify([
+      this.mode,
+      this.pane?.pane_id,
+      this.pane?.agent,
+      this.pane?.agent_session,
+      connection,
+    ])
     const size = this.actions.paneSize()
     const dimensions = `Pane is ${size.cols} × ${size.rows}`
     if (signature === this.actionSignature) {
-      const foot = this.actionMenu.querySelector(".popover-foot")
+      const foot = this.actionMenu.querySelector(".popover-foot:not(.connection-info)")
       if (foot !== null) foot.textContent = dimensions
       return
     }
@@ -265,6 +266,12 @@ export class DetailScreen {
     this.actionMenu.appendChild(this.separator())
     this.renderAgentActions()
 
+    if (connection.length > 0) {
+      const info = document.createElement("div")
+      info.className = "popover-foot connection-info"
+      info.textContent = connection
+      this.actionMenu.appendChild(info)
+    }
     const foot = document.createElement("div")
     foot.className = "popover-foot"
     foot.textContent = dimensions
@@ -359,10 +366,15 @@ export class DetailScreen {
     if (paneId !== this.inputPaneId) {
       // Flush while the sink still points to the old pane.
       this.input.reset()
+      this.keyToolbar.reset()
       this.inputPaneId = paneId
     }
     this.pane = pane
     this.input.setEnabled(pane !== null)
+    this.keyToolbar.setEnabled(pane !== null)
+    this.commandInput.disabled = pane === null
+    this.commandSend.disabled = pane === null
+    this.keyboardToggle.disabled = pane === null
 
     if (pane === null) {
       this.tabNumber.textContent = "—"
@@ -406,5 +418,6 @@ export class DetailScreen {
   closeMenus(): void {
     this.closeTabMenu()
     this.closeActionMenu()
+    this.keyToolbar.closeMenu()
   }
 }

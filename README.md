@@ -45,9 +45,10 @@ socket 路径优先使用 `HERDR_SOCKET_PATH`，其次是 `HERDR_SESSION` 对应
 
 - 列表按 Working、Blocked、Settled 分组，侧栏按工作区、标签和面板组织会话。
 - 详情页可切换面板、创建工作区和标签，文字与控制键直接发送到所选面板。
-- 输入按顺序合并发送；切换面板前会发送原面板队列。上下方向键浏览远端历史，回车提交。
+- 输入按顺序合并发送；切换面板前会发送原面板队列。默认快捷栏依次为 Tab、Esc、Paste、Shift+Tab、↑、↓、Ctrl+C，其余按需添加。上下方向键浏览远端历史，回车提交。
 - 显示方式包括 Wrap to Phone、Original Width 和 Shrink to Fit。窄屏默认按屏宽重排，宽屏默认保留原宽度；选择保存在本地。
-- 向上滚动时保留阅读位置，回到底部后继续跟随输出。终端使用 Ghostty VT 处理宽字符与样式，图标字体按需加载并补绘。
+- 终端保持 14px 字号、21px 行高。向上滚动时保留阅读位置，回到底部后继续跟随输出。终端使用 Ghostty VT 处理宽字符与样式，图标字体按需加载并补绘。连续同色背景合并绘制；终端固定的黑白灰文字与消息底色随页面外观适配，彩色高亮保持原样。
+- 连接成功后收起常驻说明，连接详情收入更多菜单；连接中、重连和错误提示仍直接显示。
 - Restart <agent> 停止当前 agent 并开启新会话；Restart & Continue 恢复原会话并发送“继续”。没有可恢复会话时，该项不可用。
 
 Alma 桌面端限制部分 RPC，如 `pane.focus`。客户端仍按面板 ID 读取和输入，不依赖桌面焦点。状态与终端内容通过轮询更新。
@@ -124,20 +125,20 @@ GitHub Actions 在推送到 `master`、提交 Pull Request 或手动触发时运
 | `node scripts/check-recovery-browser.mjs`  | 完整应用的刷新配对恢复、无响应和断线重连                |
 | `node scripts/e2e-check.mjs`               | 使用本机身份，经真实 relay 读取面板、输入命令并检查回显 |
 
-前两项输出仅监听回环地址的检查页面。字体服务的 `/terminal` 页面另检查 Canvas 明暗切换、静止快照重绘和三种模式的滚动；恢复服务的 `/check/phone` 提供 390 × 844 的应用预览，`/check/activity` 以受控可见性事件检查前后台读取及刷新恢复，`/check/input` 检查真实 DOM 中的 Unicode 编辑、光标与受控组合输入事件。第三项会实际向第一个面板输入命令，需在可操作的测试面板上运行。手机软键盘、中文 IME 和键盘遮挡需按[界面验收步骤](docs/ui-design.md#验收)在真机检查，桌面测试不覆盖这些行为。
+前两项输出仅监听回环地址的检查页面。字体服务的 `/terminal` 页面另检查 Canvas 明暗切换、静止快照重绘和三种模式的滚动；恢复服务的 `/check/phone` 提供 390 × 844 的应用预览，`/check/activity` 以受控可见性事件检查前后台读取及刷新恢复，`/check/input` 检查真实 DOM 中的 Unicode 编辑、光标与受控组合输入事件；`/check/ui` 使用原始页面与样式，在隔离页面检查明暗主题、320/390/1024px 布局、菜单位置、按钮形状、触摸区域与焦点，不连接桌面。第三项会实际向第一个面板输入命令，需在可操作的测试面板上运行。手机软键盘、中文 IME 和键盘遮挡需按[界面验收步骤](docs/ui-design.md#验收)在真机检查，桌面测试不覆盖这些行为。
 
 `npm run privacy-check` 检查工作区文件；`npm run privacy-check -- --staged` 检查完整暂存区快照。`npm run privacy-check -- --install` 安装或更新提交钩子，使其检查暂存区，避免工作区的后续修改掩盖已暂存内容。检查日志只报告文件、行号和规则，不回显敏感值。仓库不保存连接码、路由令牌、二维码截图、本机配置或私有路径。第三方字体、WASM 与许可证按[资源说明](docs/third-party.md)维护。
 
 ## 代码导航
 
-| 目录或模块                                                     | 职责                                                    |
-| -------------------------------------------------------------- | ------------------------------------------------------- |
-| `agent/src/`                                                   | herdr socket、状态缓存、HTTP 服务、relay 注册与加密桥接 |
-| `web/src/main.ts`、`detail.ts`                                 | 页面状态、配对、会话选择与终端交互                      |
-| `web/src/api.ts`、`alma.ts`、`tunnel.ts`                       | 本地 API 与两种远端协议                                 |
-| `web/src/terminal.ts`、`ghostty-vt.ts`、`layout.ts`            | 渲染、VT 绑定与窄屏重排                                 |
-| `web/src/input.ts`、`line-edit.ts`、`send-queue.ts`、`keys.ts` | 终端输入与按序发送                                      |
-| `mock/`、`tests/`、`scripts/`                                  | 模拟服务、回归与构建检查                                |
+| 目录或模块                                                                       | 职责                                                    |
+| -------------------------------------------------------------------------------- | ------------------------------------------------------- |
+| `agent/src/`                                                                     | herdr socket、状态缓存、HTTP 服务、relay 注册与加密桥接 |
+| `web/src/main.ts`、`detail.ts`                                                   | 页面状态、配对、会话选择与终端交互                      |
+| `web/src/api.ts`、`alma.ts`、`tunnel.ts`                                         | 本地 API 与两种远端协议                                 |
+| `web/src/terminal.ts`、`ghostty-vt.ts`、`layout.ts`                              | 渲染、VT 绑定与窄屏重排                                 |
+| `web/src/input.ts`、`key-toolbar.ts`、`line-edit.ts`、`send-queue.ts`、`keys.ts` | 终端输入与按序发送                                      |
+| `mock/`、`tests/`、`scripts/`                                                    | 模拟服务、回归与构建检查                                |
 
 ## 限制
 

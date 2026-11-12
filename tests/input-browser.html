@@ -43,6 +43,7 @@
     <pre id="manual-state"></pre>
     <script type="module">
     import { TerminalInput } from "/dist/input.js"
+    import { KeyToolbar } from "/dist/key-toolbar.js"
 
     const results = document.querySelector("#results")
     const fixtures = document.querySelector("#fixtures")
@@ -194,6 +195,219 @@
         },
       )
     }
+    const savedExtras = localStorage.getItem("alma-herdr-web:extra-keys")
+    function toolbar(f, restore = false) {
+      if (!restore) localStorage.removeItem("alma-herdr-web:extra-keys")
+      const row = document.createElement("div")
+      const menu = document.createElement("fieldset")
+      const mode = document.createElement("span")
+      menu.id = "test-extra-keys"
+      const errors = []
+      fixtures.append(row, menu, mode)
+      const keys = new KeyToolbar(row, menu, mode, f.input, f.field, f.canvas, (message) => errors.push(message))
+      keys.setEnabled(true)
+      return {
+        keys,
+        row,
+        menu,
+        choose: (...labels) => {
+          for (const label of labels) {
+            const control = [...menu.querySelectorAll("label")]
+              .find((item) => item.dataset.keyLabel === label)
+              ?.querySelector("input")
+            if (!control) throw new Error(`Missing optional key: ${label}`)
+            if (!control.checked) control.click()
+          }
+        },
+        mode,
+        errors,
+        button: (label) =>
+          [...row.querySelectorAll("button"), row.nextElementSibling].find((item) => item.textContent === label),
+      }
+    }
+    async function withClipboard(readText, run) {
+      const original = Object.getOwnPropertyDescriptor(navigator, "clipboard")
+      Object.defineProperty(navigator, "clipboard", { configurable: true, value: { readText } })
+      try {
+        await run()
+      } finally {
+        if (original) Object.defineProperty(navigator, "clipboard", original)
+        else delete navigator.clipboard
+      }
+    }
+    await check("Preset edit chips update the input and remote keys together", async (f) => {
+      const ui = toolbar(f)
+      ui.choose("Ctrl+W", "⌫", "Enter")
+      f.input.type("one two")
+      ui.button("Ctrl+W").click()
+      equal([f.field.value, f.field.selectionStart], ["one ", 4])
+      ui.button("⌫").click()
+      equal(f.field.value, "one")
+      ui.button("Enter").click()
+      equal(f.field.value, "")
+      await settle()
+      equal(f.sent, [
+        ["text", "one two"],
+        ["keys", ["ctrl+w", "backspace", "enter"]],
+      ])
+    })
+    await check("Ctrl is used once and then releases", async (f) => {
+      const ui = toolbar(f)
+      ui.choose("Ctrl")
+      f.input.type("abcd")
+      ui.button("Ctrl").click()
+      equal(ui.button("Ctrl").getAttribute("aria-pressed"), "true")
+      equal(press(f.field, "a").defaultPrevented, true)
+      equal(f.field.selectionStart, 0)
+      equal(ui.button("Ctrl").getAttribute("aria-pressed"), "false")
+      f.input.type("X")
+      await settle()
+      equal(f.sent, [
+        ["text", "abcd"],
+        ["keys", ["ctrl+a"]],
+        ["text", "X"],
+      ])
+    })
+    await check("Modifier chips keep combined arrow modifiers", async (f) => {
+      const ui = toolbar(f)
+      ui.choose("Ctrl", "Alt", "Shift", "←")
+      f.input.type("one two")
+      for (const label of ["Ctrl", "Alt", "Shift"]) ui.button(label).click()
+      ui.button("←").click()
+      equal(f.field.selectionStart, 4)
+      await settle()
+      equal(f.sent, [
+        ["text", "one two"],
+        ["keys", ["ctrl+alt+shift+left"]],
+      ])
+    })
+    await check("Shift transforms virtual text input once", async (f) => {
+      const ui = toolbar(f)
+      ui.choose("Shift")
+      ui.button("Shift").click()
+      const event = new InputEvent("beforeinput", { data: "x", inputType: "insertText", cancelable: true })
+      f.field.dispatchEvent(event)
+      equal(event.defaultPrevented, true)
+      equal(f.field.value, "X")
+      equal(ui.mode.textContent, "Real-time input")
+      await settle()
+      equal(f.sent, [["text", "X"]])
+    })
+    await check("Clipboard paste replaces the selected text", async (f) => {
+      const ui = toolbar(f)
+      f.input.type("abcd")
+      f.field.setSelectionRange(1, 2)
+      await withClipboard(
+        async () => "X",
+        async () => {
+          ui.button("Paste").click()
+          await settle()
+        },
+      )
+      equal([f.field.value, f.field.selectionStart], ["aXcd", 2])
+      equal(ui.errors, [])
+    })
+    await check("Denied clipboard access gives a native paste fallback", async (f) => {
+      const ui = toolbar(f)
+      await withClipboard(
+        async () => {
+          throw new DOMException("Denied", "NotAllowedError")
+        },
+        async () => {
+          ui.button("Paste").click()
+          await settle()
+        },
+      )
+      equal(ui.errors, ["Clipboard unavailable. Long-press the input field to paste."])
+      equal(f.sent, [])
+    })
+    await check("Pending clipboard reads cannot reach a newly selected pane", async (f) => {
+      const ui = toolbar(f)
+      let finish
+      await withClipboard(
+        () =>
+          new Promise((resolve) => {
+            finish = resolve
+          }),
+        async () => {
+          ui.button("Paste").click()
+          ui.keys.reset()
+          f.input.reset()
+          f.input.type("new pane")
+          finish("old clipboard")
+          await settle()
+        },
+      )
+      equal(f.field.value, "new pane")
+      equal(f.sent, [["text", "new pane"]])
+    })
+    await check("The bottom Enter action releases pending modifiers", async (f) => {
+      const ui = toolbar(f)
+      ui.choose("Ctrl")
+      ui.button("Ctrl").click()
+      ui.keys.submit()
+      equal(ui.button("Ctrl").getAttribute("aria-pressed"), "false")
+      equal(press(f.field, "c").defaultPrevented, false)
+      f.input.type("c")
+      await settle()
+      equal(f.sent, [
+        ["keys", ["enter"]],
+        ["text", "c"],
+      ])
+    })
+    await check("Shift transforms punctuation in the shortcut and virtual keyboard", async (f) => {
+      const ui = toolbar(f)
+      ui.choose("Shift", String.fromCharCode(96))
+      ui.button("Shift").click()
+      ui.button(String.fromCharCode(96)).click()
+      ui.button("Shift").click()
+      press(f.field, "1")
+      equal(f.field.value, "~!")
+      await settle()
+      equal(f.sent, [["text", "~!"]])
+    })
+    await check("Default shortcuts stay focused and the add button stays outside the scroller", async (f) => {
+      const ui = toolbar(f)
+      equal(
+        [...ui.row.querySelectorAll("button")].map((item) => item.textContent),
+        ["Tab", "Esc", "Paste", "Shift+Tab", "↑", "↓", "Ctrl+C"],
+      )
+      equal(ui.button("+").parentElement === ui.row.parentElement, true)
+      equal(ui.row.contains(ui.button("+")), false)
+      ui.keys.closeMenu()
+      equal(ui.button("+").getAttribute("aria-expanded"), "false")
+      ui.button("+").click()
+      equal(ui.menu.classList.contains("hidden"), false)
+      equal(ui.button("+").getAttribute("aria-expanded"), "true")
+      ui.choose("Ctrl+A")
+      equal(ui.button("+").getAttribute("aria-expanded"), "true")
+      ui.keys.closeMenu()
+      equal(ui.menu.classList.contains("hidden"), true)
+      equal(ui.button("+").getAttribute("aria-expanded"), "false")
+    })
+    await check("Promoted Shift+Tab stays unique and sends its supported key", async (f) => {
+      localStorage.setItem("alma-herdr-web:extra-keys", JSON.stringify(["shift+tab", "ctrl+a"]))
+      const ui = toolbar(f, true)
+      equal([...ui.row.querySelectorAll("button")].filter((item) => item.textContent === "Shift+Tab").length, 1)
+      equal(Boolean(ui.button("Ctrl+A")), true)
+      ui.button("Shift+Tab").click()
+      await settle()
+      equal(f.sent, [["keys", ["shift+tab"]]])
+    })
+    await check("Optional keys persist and removing a modifier releases its state", async (f) => {
+      const ui = toolbar(f)
+      ui.choose("Ctrl+A", "Ctrl")
+      ui.button("Ctrl").click()
+      const control = [...ui.menu.querySelectorAll("input")].find((item) => item.value === "ctrl")
+      control.click()
+      equal(ui.mode.textContent, "Real-time input")
+      equal(ui.button("Ctrl"), undefined)
+      const restored = toolbar(fixture(), true)
+      equal(Boolean(restored.button("Ctrl+A")), true)
+      equal(restored.button("Ctrl"), undefined)
+    })
+    if (savedExtras === null) localStorage.removeItem("alma-herdr-web:extra-keys")
+    else localStorage.setItem("alma-herdr-web:extra-keys", savedExtras)
     document.title = lines.some((line) => line.startsWith("FAIL")) ? "FAIL: Terminal input" : "PASS: Terminal input"
     results.textContent += `\n${document.title.startsWith("PASS") ? "ALL CHECKS PASSED" : "CHECKS FAILED"}`
     const field = document.querySelector("#manual")

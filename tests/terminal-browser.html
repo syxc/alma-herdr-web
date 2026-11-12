@@ -55,6 +55,26 @@ try {
     paints += 1
     render()
   }
+  view.setMode("original")
+  await view.setContent(`\x1b[48;2;239;239;239m${" ".repeat(50)}\x1b[0m`, 10)
+  await pause(80)
+  for (const theme of ["dark", "light"]) {
+    await view.setTheme(theme)
+    const backgroundPixels = new Set()
+    for (let x = 20; x < 300; x += 1 / devicePixelRatio) backgroundPixels.add(pixel(x, 18))
+    check(
+      backgroundPixels.size === 1 && backgroundPixels.has(theme === "dark" ? "45,49,58" : "239,239,239"),
+      `${theme}: continuous ANSI background has no cell seams (${backgroundPixels.size} colours)`,
+    )
+    await view.setContent("plain text", 10)
+    check(
+      pixel(25, 18) === (theme === "dark" ? "40,44,52" : "255,255,255"),
+      `${theme}: plain text has no message background`,
+    )
+    await view.setContent(`\x1b[48;2;239;239;239m${" ".repeat(50)}\x1b[0m`, 10)
+  }
+  await view.setTheme("dark")
+  view.setMode("wrap")
   const text = "\x1b[31mRed\x1b[0m 中文 \x1b[4munderline\x1b[0m \x1b[38;2;12;34;56mRGB"
   await view.setContent(text, 10)
   await pause(80)
@@ -75,7 +95,7 @@ try {
   await view.setContent(long, 24)
   await pause(80)
   check(host.scrollWidth <= host.clientWidth, "390px Wrap keeps normal-size text without horizontal overflow")
-  host.scrollTop = 19 * 10
+  host.scrollTop = 21 * 10
   await pause(180)
   const anchor = host.scrollTop
   await view.setTheme("dark")

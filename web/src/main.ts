@@ -311,6 +311,7 @@ const detail = new DetailScreen({
   status: (message, isError) => setStatus(message, isError),
   setFitMode: (mode: FitMode) => terminal.setMode(mode),
   paneSize: () => terminal.size(),
+  connectionInfo,
 })
 
 async function selectPane(paneId: string): Promise<void> {
@@ -395,6 +396,13 @@ async function refreshTerminal(): Promise<void> {
   }
 }
 
+function connectionInfo(): string {
+  const status = connectionPill.textContent ?? "offline"
+  if (activePairing === null) return localApi ? `Local desktop · ${status}` : "No paired desktop"
+  const relay = activePairing.kind === "alma" ? activePairing.relay : activePairing.payload.relay
+  return `${status} · Encrypted session via ${relay}`
+}
+
 function renderListMenu(): void {
   listMenu.replaceChildren()
   const entries: { label: string; hint: string; run: () => void }[] = [
@@ -428,7 +436,9 @@ function renderListMenu(): void {
         pendingTerminal = null
         selectedPaneId = null
         void applyState(null, false)
+        remoteBanner.classList.remove("hidden")
         remoteBanner.textContent = "Pair with a desktop to open its terminals."
+        setStatus("", false)
         pairPanel.classList.remove("hidden")
         showScreen("list")
       },
@@ -470,6 +480,10 @@ function renderListMenu(): void {
     listMenu.appendChild(item)
   }
   appendAppearanceControl(listMenu)
+  const info = document.createElement("div")
+  info.className = "popover-foot connection-info"
+  info.textContent = connectionInfo()
+  listMenu.appendChild(info)
 }
 
 async function createNewWorkspace(): Promise<void> {
@@ -737,11 +751,9 @@ async function applyPairing(source: string | Pairing): Promise<boolean> {
     selectedPaneId = null
     await refreshState()
     if (reconnectNeeded) return false
-    remoteBanner.textContent =
-      pairing.kind === "alma"
-        ? `Encrypted session with the Alma desktop via ${pairing.relay}`
-        : `Encrypted remote session via ${pairing.payload.relay}`
-    setStatus("connected to the desktop", false)
+    remoteBanner.classList.add("hidden")
+    remoteBanner.textContent = ""
+    setStatus("", false)
     connectEvents(handleEvent)
     return true
   } catch (error) {

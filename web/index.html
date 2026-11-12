@@ -178,6 +178,7 @@
                 </svg>
               </button>
             </div>
+            <div id="list-menu" class="popover hidden"></div>
           </header>
           <div id="pair-panel" class="pair-panel hidden">
             <input id="pair-input" type="url" placeholder="Paste a pairing link">
@@ -262,69 +263,85 @@
                 </button>
               </div>
             </div>
+            <div id="tab-menu" class="popover popover-menu hidden"></div>
+            <div id="action-menu" class="popover hidden"></div>
           </header>
           <div id="terminal-view" class="view">
             <canvas id="terminal" tabindex="0"></canvas>
           </div>
           <footer id="statusbar" class="statusbar"></footer>
-          <div id="key-chips" class="key-chips"></div>
-          <div id="command-bar" class="command-bar">
-            <button id="keys-toggle" class="round-fill" type="button" aria-label="Show the keys">
-              <span class="command-glyph" aria-hidden="true">⌘</span>
-            </button>
-            <input
-              id="command-input"
-              type="text"
-              placeholder="Type a command"
-              autocomplete="off"
-              autocapitalize="off"
-              autocorrect="off"
-              spellcheck="false"
-              aria-label="Type to send to the pane"
-            >
-            <button id="keyboard-toggle" class="round-outline" type="button" aria-label="Show the keyboard">
-              <svg
-                viewBox="0 0 24 24"
-                width="20"
-                height="20"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="1.7"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                aria-hidden="true"
+          <div class="input-tools">
+            <div id="shortcut-bar" class="shortcut-bar">
+              <div id="key-chips" class="key-chips" role="toolbar" aria-label="Terminal shortcuts"></div>
+            </div>
+            <fieldset id="extra-keys" class="extra-keys hidden" aria-label="Extra terminal keys"></fieldset>
+            <div id="command-bar" class="command-bar">
+              <div class="realtime-input">
+                <button id="keyboard-toggle" class="keyboard-inline" type="button" aria-label="Show the keyboard">
+                  <svg
+                    viewBox="0 0 24 24"
+                    width="20"
+                    height="20"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.7"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    aria-hidden="true"
+                  >
+                    <rect x="2.5" y="4.5" width="19" height="12" rx="2.5" />
+                    <path
+                      d="M6 8.5h.01M9.5 8.5h.01M13 8.5h.01M16.5 8.5h.01M6 11.8h.01M9.5 11.8h.01M13 11.8h.01M16.5 11.8h.01"
+                    />
+                    <path d="M7.5 14.6h9" />
+                    <path d="M9 19.5l3 2.5 3-2.5" />
+                  </svg>
+                </button>
+                <div class="input-copy">
+                  <label id="input-mode" for="command-input">Real-time input</label>
+                  <input
+                    id="command-input"
+                    type="text"
+                    placeholder="Tap to show keyboard"
+                    autocomplete="off"
+                    autocapitalize="off"
+                    autocorrect="off"
+                    spellcheck="false"
+                    aria-label="Type to send to the pane"
+                    aria-describedby="input-mode"
+                  >
+                </div>
+              </div>
+              <button
+                id="keys-toggle"
+                class="input-action"
+                type="button"
+                aria-label="Hide terminal shortcuts"
+                aria-controls="shortcut-bar"
+                aria-expanded="true"
               >
-                <rect x="2.5" y="4.5" width="19" height="12" rx="2.5" />
-                <path
-                  d="M6 8.5h.01M9.5 8.5h.01M13 8.5h.01M16.5 8.5h.01M6 11.8h.01M9.5 11.8h.01M13 11.8h.01M16.5 11.8h.01"
-                />
-                <path d="M7.5 14.6h9" />
-                <path d="M9 19.5l3 2.5 3-2.5" />
-              </svg>
-            </button>
-            <button id="command-send" class="round-fill" type="button" aria-label="Send to the pane">
-              <svg
-                viewBox="0 0 24 24"
-                width="20"
-                height="20"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                aria-hidden="true"
-              >
-                <path d="M20 6v4a5 5 0 0 1-5 5H6" />
-                <path d="M10 10l-4 5 4 5" />
-                <path d="M4 21h16" />
-              </svg>
-            </button>
+                <span aria-hidden="true">⌘</span>
+              </button>
+              <button id="command-send" class="input-action" type="button" aria-label="Send Enter to the pane">
+                <svg
+                  viewBox="0 0 24 24"
+                  width="20"
+                  height="20"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M20 6v4a5 5 0 0 1-5 5H6" />
+                  <path d="M10 10l-4 5 4 5" />
+                  <path d="M4 21h16" />
+                </svg>
+              </button>
+            </div>
           </div>
         </section>
-
-        <div id="list-menu" class="popover hidden"></div>
-        <div id="tab-menu" class="popover popover-menu hidden"></div>
-        <div id="action-menu" class="popover hidden"></div>
       </main>
     </div>
     <div id="scrim" class="scrim hidden"></div>

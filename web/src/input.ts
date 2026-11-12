@@ -89,6 +89,23 @@ export class TerminalInput {
       return
     }
     this.onClick()
+    const start = this.field.selectionStart ?? this.caret
+    const end = this.field.selectionEnd ?? start
+    if (/[\r\n]/.test(text)) {
+      const selected = characterCount(this.line.slice(start, end))
+      if (selected > 0) {
+        this.queue.keys([...new Array(selected).fill("right"), ...new Array(selected).fill("backspace")])
+      }
+      this.queue.text(text)
+      this.forget()
+      return
+    }
+    if (start !== end) {
+      this.field.value = this.line.slice(0, start) + text + this.line.slice(end)
+      this.field.setSelectionRange(start + text.length, start + text.length)
+      this.syncValue()
+      return
+    }
     this.queue.text(text)
     // The field shows the line the pane is holding.
     const value = this.field.value
@@ -104,22 +121,18 @@ export class TerminalInput {
     if (!this.enabled) {
       return
     }
-    this.queue.keys(keys)
-    if (keys.includes("ctrl+c") || keys.includes("tab")) {
-      // The pane threw the line away or filled it with a completion.
-      this.forget()
-      return
-    }
-    if (keys.includes("up") || keys.includes("down")) {
-      // The history brought a line the client cannot know.
-      this.forget()
-      return
-    }
-    if (keys.includes("left")) {
-      this.setCaret(adjacentCaret(this.field.value, this.caret, -1))
-    }
-    if (keys.includes("right")) {
-      this.setCaret(adjacentCaret(this.field.value, this.caret, 1))
+    this.onClick()
+    for (const key of keys) {
+      if (key === "enter") this.submit()
+      else if (key === "backspace") this.eraseBefore()
+      else if (["left", "right"].includes(key.split("+").at(-1) ?? "")) {
+        this.moveCursor(key.endsWith("left") ? -1 : 1, key.includes("ctrl+") || key.includes("alt+"), key)
+      } else if (/^ctrl[+][a-z]$/.test(key)) this.control(key.slice(-1))
+      else if (/^alt[+][a-z]$/.test(key)) this.meta(key.slice(-1))
+      else {
+        this.queue.keys([key])
+        if (["tab", "shift+tab", "up", "down"].includes(key)) this.forget()
+      }
     }
   }
 
@@ -229,6 +242,10 @@ export class TerminalInput {
       // The input method is still working; the text comes with its end.
       return
     }
+    this.syncValue()
+  }
+
+  private syncValue(): void {
     const value = this.field.value
     const caret = this.field.selectionStart ?? value.length
     if (value === this.line) {
@@ -343,14 +360,14 @@ export class TerminalInput {
   /**
    * Moves the cursor of the line.
    */
-  private moveCursor(direction: -1 | 1, byWord: boolean): void {
+  private moveCursor(direction: -1 | 1, byWord: boolean, key?: string): void {
     const value = this.field.value
     const target = byWord
       ? direction < 0
         ? wordStart(value, this.caret)
         : wordEnd(value, this.caret)
       : adjacentCaret(value, this.caret, direction)
-    this.queue.keys([byWord ? (direction < 0 ? "ctrl+left" : "ctrl+right") : direction < 0 ? "left" : "right"])
+    this.queue.keys([key ?? (byWord ? (direction < 0 ? "ctrl+left" : "ctrl+right") : direction < 0 ? "left" : "right")])
     this.setCaret(target)
   }
 
@@ -358,6 +375,14 @@ export class TerminalInput {
    * Erases the character in front of the cursor.
    */
   private eraseBefore(): void {
+    const start = this.field.selectionStart ?? this.caret
+    const end = this.field.selectionEnd ?? start
+    if (start !== end) {
+      this.field.value = this.line.slice(0, start) + this.line.slice(end)
+      this.field.setSelectionRange(start, start)
+      this.syncValue()
+      return
+    }
     if (this.caret === 0) {
       // The field has nothing left, but the line of the pane may have.
       this.queue.keys(["backspace"])

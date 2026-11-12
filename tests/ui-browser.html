@@ -1,0 +1,279 @@
+<!doctype html>
+<html lang="en">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>UI detail checks</title>
+  <style>
+  body {
+    margin: 20px;
+    font: 14px / 1.5 system-ui;
+    color: #1a1a1a;
+    background: #e5e7eb;
+  }
+  iframe {
+    display: block;
+    border: 0;
+    max-width: 100%;
+    background: white;
+  }
+  pre {
+    white-space: pre-wrap;
+  }
+  button,
+  select {
+    min-height: 44px;
+    margin: 4px;
+    font: inherit;
+  }
+  </style>
+  <h1>UI detail checks</h1>
+  <p>
+    Isolated layout checks use the real page markup and stylesheet. No desktop connection, native touch, or phone IME.
+  </p>
+  <label
+    >Appearance
+    <select id="theme">
+      <option>dark</option>
+      <option>light</option>
+    </select></label
+  >
+  <label
+    >Width
+    <select id="width">
+      <option>390</option>
+      <option>320</option>
+      <option>1024</option>
+    </select></label
+  >
+  <label
+    >View
+    <select id="view">
+      <option>detail</option>
+      <option>list</option>
+      <option>login</option>
+    </select></label
+  >
+  <button id="menu" type="button">Toggle menu</button>
+  <iframe id="preview" title="Isolated UI preview" width="390" height="760"></iframe>
+  <pre id="focus-state">Use Tab inside the preview to check the keyboard focus outline.</pre>
+  <pre id="results">Running…</pre>
+  <script type="module">
+  import { appendAppearanceControl } from "/dist/appearance.js"
+  import { TerminalInput } from "/dist/input.js"
+  import { KeyToolbar } from "/dist/key-toolbar.js"
+  import { renderSessionList } from "/dist/session-list.js"
+
+  const preview = document.querySelector("#preview")
+  const results = document.querySelector("#results")
+  const source = new DOMParser().parseFromString(await (await fetch("/?clean=1")).text(), "text/html")
+  for (const node of source.querySelectorAll("script")) node.remove()
+  source.querySelector("head").prepend(Object.assign(document.createElement("base"), { href: `${location.origin}/` }))
+  const loaded = new Promise((resolve) => preview.addEventListener("load", resolve, { once: true }))
+  preview.srcdoc = `<!doctype html>${source.documentElement.outerHTML}`
+  await loaded
+  const doc = preview.contentDocument
+  const style = (element, pseudo) => preview.contentWindow.getComputedStyle(element, pseudo)
+  const el = (id) => doc.getElementById(id)
+  const frame = () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+  const panes = ["working", "working", "working", "blocked", "done"].map((status, index) => ({
+    pane_id: `p${index}`,
+    agent_status: status,
+    agent: "assistant",
+    title: "Reviewing a very long project name",
+    cwd: "/workspace/projects/a-long-project-name",
+    terminal_title_stripped: "",
+  }))
+  renderSessionList(el("session-list"), { snapshot: { panes }, selectedPaneId: "p1", onPick() {} })
+  const input = new TerminalInput(el("command-input"), el("terminal"), { sendText() {}, sendKeys() {} })
+  input.setEnabled(true)
+  new KeyToolbar(
+    el("key-chips"),
+    el("extra-keys"),
+    el("input-mode"),
+    input,
+    el("command-input"),
+    el("terminal"),
+    () => {},
+  ).setEnabled(true)
+  for (const id of ["action-menu", "list-menu", "tab-menu"]) {
+    el(id).innerHTML =
+      `<button class="popover-item"><span class="popover-glyph">✓</span><span class="popover-text"><span class="popover-label">Wrap to Phone</span><span class="popover-hint">Keep normal-size text on a narrow screen</span></span></button><button class="popover-item" disabled><span class="popover-text"><span class="popover-label">Restart &amp; Continue</span><span class="popover-hint">No resumable session</span></span></button><div class="popover-sep"></div>`
+    appendAppearanceControl(el(id))
+  }
+  el("detail-status").textContent = "working"
+  el("detail-title").textContent = "A long terminal title that must fit in the header"
+  el("remote-banner").textContent = "Encrypted session with an isolated preview desktop"
+  el("remote-banner").classList.remove("hidden")
+  function show(theme, width, view) {
+    doc.documentElement.dataset.theme = theme
+    preview.width = width
+    el("screen-login").classList.toggle("hidden", view !== "login")
+    el("app").classList.toggle("hidden", view === "login")
+    el("screen-list").classList.toggle("hidden", view !== "list")
+    el("screen-detail").classList.toggle("hidden", view !== "detail")
+    for (const id of ["action-menu", "list-menu", "tab-menu"]) el(id).classList.add("hidden")
+  }
+  const headerPositions = new Map()
+  const lines = []
+  function check(condition, message) {
+    if (!condition) throw new Error(message)
+    lines.push(`PASS ${message}`)
+  }
+  try {
+    for (const theme of ["dark", "light"]) {
+      for (const width of [320, 390, 1024]) {
+        for (const view of ["list", "detail", "login"]) {
+          show(theme, width, view)
+          await frame()
+          check(doc.documentElement.scrollWidth <= width, `${theme} ${width}px ${view}: no page overflow`)
+          if (view === "login") continue
+          const prefix = view === "detail" ? "detail" : "list"
+          const back = el(`${prefix}-back`)
+          const more = el(`${prefix}-more`)
+          const header = back.closest("header").getBoundingClientRect()
+          check(
+            back.offsetWidth === 50 && back.offsetHeight === 50 && more.offsetWidth === 60 && more.offsetHeight === 46,
+            `${theme} ${width}px ${view}: original header touch targets`,
+          )
+          check(
+            more.getBoundingClientRect().right <= header.right,
+            `${theme} ${width}px ${view}: actions fit the header`,
+          )
+          check(
+            style(back).webkitTapHighlightColor === "rgba(0, 0, 0, 0)" &&
+              style(more).webkitTapHighlightColor === "rgba(0, 0, 0, 0)",
+            `${theme} ${width}px ${view}: native rectangular tap overlay disabled`,
+          )
+          const controls = [...back.closest("header").querySelectorAll(".round-outline, .pill-button")]
+          check(
+            controls.every((button) => {
+              const surface = style(button, "::before")
+              return surface.width === "38px" && surface.height === "38px" && surface.borderRadius === "50%"
+            }),
+            `${theme} ${width}px ${view}: every header action has a 38px circular surface`,
+          )
+          const centers = controls.map((button) => {
+            const box = button.getBoundingClientRect()
+            return [box.x + box.width / 2, box.y + box.height / 2]
+          })
+          check(
+            header.height === (width <= 760 ? 58 : 70) &&
+              centers.every((point) => Math.abs(point[1] - header.y - header.height / 2) < 0.01),
+            `${theme} ${width}px ${view}: fixed header height and common action centerline`,
+          )
+          const positionKey = `${theme}:${width}`
+          if (view === "list") headerPositions.set(positionKey, { top: header.top, centers })
+          else {
+            const previous = headerPositions.get(positionKey)
+            check(
+              previous.top === header.top &&
+                centers.every((point, index) =>
+                  point.every((value, axis) => Math.abs(value - previous.centers[index][axis]) < 0.01),
+                ),
+              `${theme} ${width}px: list-to-detail header action coordinates remain identical`,
+            )
+          }
+          if (view === "list") {
+            const rows = [...el("session-list").querySelectorAll(".session-row")]
+            const listBounds = el("session-list").getBoundingClientRect()
+            for (const index of [0, 1, rows.length - 1]) {
+              for (const [number, row] of rows.entries()) row.classList.toggle("selected", number === index)
+              const selected = rows[index]
+              const rowStyle = style(selected)
+              const box = selected.getBoundingClientRect()
+              check(
+                rowStyle.borderRadius === "0px" &&
+                  rowStyle.backgroundClip === "padding-box" &&
+                  rowStyle.borderBottomWidth === "1px" &&
+                  box.left === listBounds.left &&
+                  box.right === listBounds.right,
+                `${theme} ${width}px: selected row ${index + 1} stays straight and inside its separators`,
+              )
+            }
+            for (const [index, row] of rows.entries()) row.classList.toggle("selected", index === 1)
+          }
+          const center = back.closest("header").querySelector(".app-bar-center").getBoundingClientRect()
+          const actions = back.closest("header").querySelector(".app-bar-right, .pill-group").getBoundingClientRect()
+          check(
+            center.left >= back.getBoundingClientRect().right && center.right <= actions.left,
+            `${theme} ${width}px ${view}: header text does not overlap actions`,
+          )
+          const menu = el(`${view === "detail" ? "action" : "list"}-menu`)
+          menu.classList.remove("hidden")
+          await frame()
+          const bounds = menu.getBoundingClientRect()
+          check(
+            bounds.top >= header.bottom && bounds.right <= header.right && bounds.left >= header.left,
+            `${theme} ${width}px ${view}: menu stays below header and within page`,
+          )
+          check(menu.scrollWidth <= menu.clientWidth, `${theme} ${width}px ${view}: menu text fits`)
+          const select = menu.querySelector("select")
+          const selectStyle = style(select)
+          const measure = doc.createElement("canvas").getContext("2d")
+          measure.font = selectStyle.font
+          check(
+            selectStyle.appearance === "none" &&
+              select.offsetHeight >= 44 &&
+              Number.parseFloat(selectStyle.paddingRight) >= 36 &&
+              select.clientWidth -
+                Number.parseFloat(selectStyle.paddingLeft) -
+                Number.parseFloat(selectStyle.paddingRight) >=
+                measure.measureText("System").width,
+            `${theme} ${width}px ${view}: Appearance text has space separate from its arrow`,
+          )
+          check(
+            Number(style(menu.querySelector(":disabled")).opacity) < 1,
+            `${theme} ${width}px ${view}: disabled actions remain distinct`,
+          )
+          menu.classList.add("hidden")
+        }
+      }
+    }
+    show("dark", 390, "detail")
+    await frame()
+    check(
+      el("command-input").offsetHeight >= 24 && style(el("command-input")).fontSize === "16px",
+      "Phone input keeps readable text and avoids focus zoom",
+    )
+    check(
+      [...el("key-chips").querySelectorAll("button")].every((button) => button.offsetHeight >= 44),
+      "Shortcut keys keep at least 44px touch height",
+    )
+    check(style(el("command-send")).width === style(el("command-send")).height, "Input action targets are circular")
+    const disabled = el("command-send")
+    disabled.disabled = true
+    check(Number(style(disabled).opacity) < 1, "Disabled input action remains distinct")
+    disabled.disabled = false
+    el("detail-back").focus()
+    document.title = "PASS: UI details"
+    lines.push("ALL CHECKS PASSED")
+  } catch (error) {
+    lines.push(`FAIL ${error.message}`)
+    document.title = "FAIL: UI details"
+  }
+  results.textContent = lines.join("\n")
+  doc.addEventListener("keyup", (event) => {
+    if (event.key !== "Tab" || !event.isTrusted) return
+    const target = doc.activeElement
+    document.querySelector("#focus-state").textContent = JSON.stringify({
+      target: target.id,
+      documentFocused: doc.hasFocus(),
+      focusVisible: target.matches(":focus-visible"),
+      outline: style(target).outlineStyle,
+      width: style(target).outlineWidth,
+    })
+  })
+  function update() {
+    show(
+      document.querySelector("#theme").value,
+      Number(document.querySelector("#width").value),
+      document.querySelector("#view").value,
+    )
+  }
+  for (const id of ["theme", "width", "view"]) document.querySelector(`#${id}`).addEventListener("change", update)
+  document.querySelector("#menu").addEventListener("click", () => {
+    el(document.querySelector("#view").value === "list" ? "list-menu" : "action-menu").classList.toggle("hidden")
+  })
+  update()
+  </script>
+</html>

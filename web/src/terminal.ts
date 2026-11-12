@@ -1,7 +1,7 @@
 import { type Cell, type Grid, parseAnsi } from "./ansi.js"
 import { IconFontLoader } from "./icon-font.js"
 import { layoutGrid } from "./layout.js"
-import { TERMINAL_COLORS, type Theme } from "./terminal-theme.js"
+import { cellColors, TERMINAL_COLORS, type Theme } from "./terminal-theme.js"
 import { TerminalKernel } from "./vt.js"
 
 export type FitMode = "wrap" | "original" | "shrink"
@@ -33,7 +33,6 @@ export class TerminalView {
   private rowHeight = 16
   private theme: Theme = "dark"
   private background = TERMINAL_COLORS.dark.background
-  private foreground = TERMINAL_COLORS.dark.foreground
   private mode: FitMode = "wrap"
   private observer: ResizeObserver | null = null
   // Pause auto-follow while the reader is above the latest output.
@@ -118,7 +117,6 @@ export class TerminalView {
     this.captureAnchor()
     this.theme = theme
     const colors = TERMINAL_COLORS[theme]
-    this.foreground = colors.foreground
     this.background = colors.background
     this.kernel.setColors(colors)
     this.revision += 1
@@ -287,7 +285,7 @@ export class TerminalView {
     // A cell is as wide as the widest letter of the font, the way a
     // terminal measures it.
     if (this.layoutWidth < 0) this.cellWidth = Math.max(1, ctx.measureText("W").width)
-    this.cellHeight = Math.round(this.fontSize * 1.35)
+    this.cellHeight = Math.round(this.fontSize * 1.5)
 
     // The screen keeps its margin, the way the Alma app draws it.
     const inset = viewWidth > 0 ? SCREEN_INSET : 0
@@ -355,17 +353,38 @@ export class TerminalView {
       return
     }
 
+    const colorCache = new Map<string, ReturnType<typeof cellColors>>()
+    const colorsFor = (style: Cell["style"]) => {
+      const key = `${style.fg};${style.bg};${style.reverse}`
+      let colors = colorCache.get(key)
+      if (colors === undefined) {
+        colors = cellColors(style, this.theme)
+        colorCache.set(key, colors)
+      }
+      return colors
+    }
+
     // Paint backgrounds first so the trailing cell never erases a wide glyph.
     for (let row = 0; row < rows; row += 1) {
       const line = this.laidOut[row] ?? []
-      for (let column = 0; column < line.length; column += 1) {
+      let start = 0
+      let background = ""
+      // Fractional cell widths create seams when one solid fill is painted cell by cell.
+      for (let column = 0; column <= line.length; column += 1) {
         const style = line[column]?.style
-        if (style === undefined) continue
-        const background = style.reverse ? style.fg || this.foreground : style.bg
+        const next = style === undefined ? "" : colorsFor(style).background
+        if (next === background) continue
         if (background.length > 0) {
           ctx.fillStyle = background
-          ctx.fillRect(column * this.cellWidth, row * this.cellHeight, this.cellWidth, this.cellHeight)
+          ctx.fillRect(
+            start * this.cellWidth,
+            row * this.cellHeight,
+            (column - start) * this.cellWidth,
+            this.cellHeight,
+          )
         }
+        start = column
+        background = next
       }
     }
     let font = ""
@@ -379,8 +398,7 @@ export class TerminalView {
         const x = column * this.cellWidth
         const y = row * this.cellHeight
         const style = cell.style
-        const reversed = style.reverse
-        const foreground = reversed ? style.bg || this.background : style.fg || this.foreground
+        const foreground = colorsFor(style).foreground
         if (cell.ch.length === 0) continue
         ctx.globalAlpha = style.dim ? 0.6 : 1
         ctx.fillStyle = foreground

@@ -53,7 +53,18 @@ try {
   Object.defineProperty(doc, "visibilityState", { configurable: true, get: () => visibility })
   doc.querySelector("#pair-input").value = pairing
   doc.querySelector("#pair-apply").click()
-  await until(() => doc.querySelector("#statusbar").textContent === "connected to the desktop")
+  await until(
+    () =>
+      doc.querySelector("#connection").classList.contains("online") &&
+      doc.querySelector("#remote-banner").classList.contains("hidden"),
+  )
+  check(doc.querySelector("#statusbar").textContent === "", "Connected state leaves no duplicate footer message")
+  doc.querySelector("#list-more").click()
+  check(
+    doc.querySelector("#list-menu .connection-info").textContent.includes("Encrypted session"),
+    "List menu keeps connection details available",
+  )
+  doc.querySelector("#list-more").click()
   const paired = await stats()
   await pause(3200)
   const list = await stats()
@@ -61,9 +72,36 @@ try {
     list.stateReads > paired.stateReads && list.paneReads === 0,
     "List refreshes state without reading terminal snapshots",
   )
-  doc.querySelectorAll(".session-row").item(1).click()
+  doc.querySelector('.session-row[data-pane="w1:p1"]').click()
   await until(async () => (await stats()).paneReads > 0)
   check(!doc.querySelector("#screen-detail").classList.contains("hidden"), "Opening a pane starts terminal reads")
+  doc.querySelector("#detail-more").click()
+  check(
+    doc.querySelector("#action-menu .connection-info").textContent.includes("Encrypted session"),
+    "Detail menu keeps connection details available",
+  )
+  const appearance = doc.querySelector("#action-menu [data-appearance-select]")
+  const canvas = doc.querySelector("#terminal")
+  const pixel = () => {
+    const ratio = frame.contentWindow.devicePixelRatio
+    return [...canvas.getContext("2d").getImageData(Math.floor(25 * ratio), Math.floor(19 * ratio), 1, 1).data]
+      .slice(0, 3)
+      .join(",")
+  }
+  for (const choice of ["light", "dark", "system"]) {
+    appearance.value = choice
+    appearance.dispatchEvent(new Event("change", { bubbles: true }))
+    const theme =
+      choice === "system"
+        ? frame.contentWindow.matchMedia("(prefers-color-scheme: dark)").matches
+          ? "dark"
+          : "light"
+        : choice
+    const expected = theme === "dark" ? "45,49,58" : "240,240,240"
+    await until(() => doc.documentElement.dataset.theme === theme && pixel() === expected)
+    check(true, `${choice}: Appearance menu switches page and fixed RGB terminal surfaces together`)
+  }
+  doc.querySelector("#detail-more").click()
   setVisibility("hidden")
   await pause(200)
   const hidden = await stats()

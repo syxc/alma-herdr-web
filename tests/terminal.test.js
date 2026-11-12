@@ -2,6 +2,7 @@ import assert from "node:assert/strict"
 import { readFile } from "node:fs/promises"
 import { test } from "node:test"
 import { TerminalView } from "../web/dist/terminal.js"
+import { cellColors } from "../web/dist/terminal-theme.js"
 import { TerminalKernel } from "../web/dist/vt.js"
 
 const bytes = await readFile(new URL("../web/vendor/ghostty/ghostty-vt.wasm", import.meta.url))
@@ -98,6 +99,63 @@ test("themes recolour indexed cells and defaults but preserve explicit RGB", asy
   )
 })
 
+test("fixed neutral snapshot colours follow the page while accent colours stay intact", async (t) => {
+  const { view, operations } = environment(t)
+  await ready(view)
+  view.setMode("original")
+  const light = "\x1b[48;2;240;240;240m\x1b[38;2;0;0;0mM\x1b[49;38;2;102;102;102mH\x1b[38;2;215;119;87mA\x1b[0m"
+  operations.length = 0
+  await view.setContent(light, 5)
+  assert.equal(operations.find((op) => op.kind === "rect" && op.height === 21).color, "#2d313a")
+  assert.deepEqual(
+    operations.filter((op) => op.kind === "text").map((op) => op.color),
+    ["#dcdfe4", "#9da2ae", "#d77757"],
+  )
+  operations.length = 0
+  await view.setTheme("light")
+  assert.equal(operations.find((op) => op.kind === "rect" && op.height === 21).color, "#f0f0f0")
+  assert.deepEqual(
+    operations.filter((op) => op.kind === "text").map((op) => op.color),
+    ["#000000", "#666666", "#d77757"],
+  )
+  operations.length = 0
+  await view.setContent("\x1b[48;2;32;32;32m\x1b[38;2;240;240;240mD\x1b[0m", 5)
+  assert.equal(operations.find((op) => op.kind === "rect" && op.height === 21).color, "#f0f2f5")
+  assert.equal(operations.find((op) => op.kind === "text").color, "#1a1a1a")
+})
+
+test("neutral adaptation preserves inverse polarity and coloured terminal pairs", () => {
+  assert.equal(
+    cellColors({ fg: "#d77757", bg: "#f0f0f0", reverse: false }, "dark").background,
+    "#2d313a",
+    "a coloured span does not break the surrounding neutral surface",
+  )
+  assert.deepEqual(cellColors({ fg: "#000000", bg: "#f0f0f0", reverse: true }, "dark"), {
+    foreground: "#2d313a",
+    background: "#dcdfe4",
+  })
+  for (const theme of ["dark", "light"]) {
+    assert.deepEqual(cellColors({ fg: "#d77757", bg: "#000000", reverse: false }, theme), {
+      foreground: "#d77757",
+      background: "#000000",
+    })
+    assert.equal(cellColors({ fg: "#ffffff", bg: "#ab2b3f", reverse: false }, theme).background, "#ab2b3f")
+  }
+})
+
+test("fallback snapshots and the loaded kernel use the same adaptive colours", async (t) => {
+  const pending = Promise.withResolvers()
+  const { view, operations } = environment(t, pending.promise)
+  const content = "\x1b[48;2;240;240;240;38;2;0;0;0mM"
+  await view.setContent(content, 5)
+  assert.equal(operations.findLast((op) => op.kind === "rect" && op.height === 21).color, "#2d313a")
+  assert.equal(operations.findLast((op) => op.kind === "text").color, "#dcdfe4")
+  pending.resolve(new Response(bytes))
+  await ready(view)
+  assert.equal(operations.findLast((op) => op.kind === "rect" && op.height === 21).color, "#2d313a")
+  assert.equal(operations.findLast((op) => op.kind === "text").color, "#dcdfe4")
+})
+
 test("a wide underlined glyph at the end of a row has a full-width underline", async (t) => {
   const { view, operations } = environment(t)
   await ready(view)
@@ -112,7 +170,7 @@ test("wide glyph backgrounds precede text and dim cannot leak into the next back
   await ready(view)
   await view.setContent("\x1b[2mA\x1b[22;41m你\x1b[4m B", 5)
   const firstText = operations.findIndex((op) => op.kind === "text")
-  const backgrounds = operations.filter((op) => op.kind === "rect" && op.height === 19)
+  const backgrounds = operations.filter((op) => op.kind === "rect" && op.height === 21)
   assert.ok(backgrounds.length > 0)
   assert.ok(backgrounds.every((op) => op.alpha === 1))
   assert.ok(operations.slice(firstText).every((op) => op.kind !== "rect" || op.height === 1))
@@ -120,6 +178,30 @@ test("wide glyph backgrounds precede text and dim cannot leak into the next back
     operations.some((op) => op.kind === "rect" && op.height === 1),
     "underline reaches the canvas",
   )
+})
+
+test("background runs merge same colours while preserving RGB, reset and reverse", async (t) => {
+  const { view, operations } = environment(t)
+  await ready(view)
+  view.setMode("original")
+  operations.length = 0
+  await view.setContent("\x1b[48;2;239;239;239m A你 \x1b[44m B\x1b[49mZ\x1b[7mR\x1b[0mN", 5)
+  const backgrounds = operations.filter((op) => op.kind === "rect" && op.height === 21)
+  assert.deepEqual(
+    backgrounds.map(({ x, width, color }) => ({ x, width, color })),
+    [
+      { x: 0, width: 40, color: "#2d313a" },
+      { x: 40, width: 16, color: "#61afef" },
+      { x: 64, width: 8, color: "#dcdfe4" },
+    ],
+  )
+  const text = operations.filter((op) => op.kind === "text")
+  assert.equal(text.find((op) => op.text === "N").color, "#dcdfe4")
+  assert.equal(text.find((op) => op.text === "R").color, "#282c34")
+  operations.length = 0
+  await view.setContent("first\nsecond", 5)
+  const rows = operations.filter((op) => op.kind === "text")
+  assert.equal(rows.at(-1).y - rows[0].y, 21)
 })
 
 test("a stalled WASM download times out and does not block a later attempt", async (t) => {
