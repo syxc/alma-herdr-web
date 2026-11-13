@@ -1,6 +1,6 @@
 # 协议与传输约束
 
-兼容基线为 herdr 0.9.5、protocol 22。herdr socket 事实依据 [Socket API](https://herdr.dev/docs/socket-api) 和 `herdr api schema --json`；Alma 协议依据 Alma 4.3 客户端及桌面端实现。版本升级时应重新核对方法白名单、帧格式和事件名称。
+兼容基线为 herdr TUI 0.9.5（protocol 22）与 herdr-core 0.1.21（framed generation 1）。TUI socket 依据 [Socket API](https://herdr.dev/docs/socket-api) 和 `herdr api schema --json`；core 依据 `hc schema`、[官方 API](https://github.com/herdrdev/herdr-core/blob/main/schema/README.md) 与 [endpoint 规则](https://github.com/herdrdev/herdr-core/blob/main/docs/security.md)。Alma 协议核对了 4.5 APK 的静态实现。版本升级时应重新核对方法白名单、帧格式和事件名称。
 
 ## herdr socket
 
@@ -15,6 +15,18 @@
 订阅类型使用点号，如 `workspace.created`；收到的事件名使用下划线，如 `workspace_created`。`pane.agent_status_changed` 和 `pane.scroll_changed` 等订阅必须带 `pane_id`。订阅集合改变时重建长连接，并按当前面板补充对应订阅。
 
 虽然事件表包含 `pane_output_changed`，该版本没有对应订阅类型。终端通过轮询 `pane.read` 更新。返回文本是带 SGR 样式的屏幕快照，读取结果位于 `result.read`；`lines` 不大于零时应省略，Alma 桌面端收到 `lines: 0` 会返回空内容。
+
+## herdr-core
+
+本机 agent 默认 `HERDR_WEB_BACKEND=auto`，自动兼容策略核对了 Alma 0.4.585 桌面安装包的静态代码：分别发现 TUI/core socket，合并成功快照；两者同时运行时均保留，单侧失败不让另一侧离线。core 的 pane/tab/workspace/focused ID 统一增加 `hc:`，按请求中的来源标识路由并去前缀后调用原生适配。无目标的 `workspace.create` / `ping` 在仅 core 在线或指定 `backend: "hc"` 时走 core，其他无目标请求沿用 TUI；输入必须有明确目标。core 的 `ping` 映射为原生 `hello`，不重新协商已建立的帧协议。写入失败不重发到另一运行时或另一 socket。`tui` / `core` 只保留为可选覆盖。
+
+core 使用 JSON-RPC 2.0；`hello {framed:true,generation:1}` 后切换为 `[channel u32le][kind u8][length u32le][payload]`。通道 0 承载 RPC，其他通道承载终端 DATA 与 CREDIT/CLOSE。关闭一次 attach 只关闭其通道。自动模式参考进程与登录 shell 的 endpoint 变量、core socket 配置、XDG 和已有命名 session 发现 socket，不执行 `hc connect` 或创建空服务；显式 core 覆盖才保留 `hc connect` 的原生 endpoint 解析与按需启动。
+
+`terminal.list` 映射为工作区、标签和面板快照。机器前缀属于地址，`t1` 与 `vps/t1` 必须分开缓存、选择和读写；远机工作区创建映射为 `terminal.run {on:machine,cwd,...}`，不能退回本机。离线机器保留可见分组，读写和新建返回明确错误。TUI 0.9.5 本身也提供 `machine`、`--machine` 和 `--remote` SSH 入口；Web 的本机 TUI agent 继续读取所配置的单个 socket，Alma 模式保留桌面统一快照提供的全部 ID 和工作区。
+
+逐键输入通过可写 attach 的 DATA 发送，不使用会自动回车的 `terminal.send`。原生屏幕通过只读 attach 获取，HTTP `read` 结果携带 `vt:true`、`cols`、`rows`；浏览器使用 Ghostty 按实际尺寸重放完整 VT 控制序列。TUI 和 Alma 的逐行 SGR 快照仍使用原路径。原生 VT 渲染需要 WASM 内核，加载失败明确报错，不能退回只理解 SGR 的解析器。
+
+core 不提供 TUI 的命名 Agent/续跑数据；客户端保留 unknown 状态，不凭进程名推断可恢复会话。Agent 启动仅在已确认的空闲 shell 中执行，无法确认时返回错误并保留现有程序。
 
 ## 本机 HTTP API
 

@@ -35,6 +35,7 @@ for (const password of ["", "test-only-passphrase"]) {
         cwd: root,
         env: {
           ...process.env,
+          HERDR_WEB_BACKEND: "tui",
           HERDR_WEB_HOST: "127.0.0.1",
           HERDR_WEB_PORT: "0",
           HERDR_WEB_PASSWORD: password,

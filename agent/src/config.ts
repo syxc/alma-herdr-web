@@ -8,7 +8,7 @@ import { join } from "node:path"
  * wins, then a named session, then the default session of the current user.
  */
 export function resolveSocketPath(env: NodeJS.ProcessEnv = process.env): string {
-  const explicit = env.HERDR_SOCKET_PATH
+  const explicit = env.HERDR_SOCKET_PATH || env.HERDR_SOCKET
   if (explicit && explicit.length > 0) {
     return explicit
   }
@@ -31,6 +31,7 @@ export function configDir(env: NodeJS.ProcessEnv = process.env): string {
 }
 
 export interface AgentConfig {
+  backend: "auto" | "tui" | "core"
   host: string
   port: number
   socketPath: string
@@ -40,7 +41,12 @@ export interface AgentConfig {
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AgentConfig {
   const parsed = Number.parseInt(env.HERDR_WEB_PORT ?? "7331", 10)
+  const backend = env.HERDR_WEB_BACKEND || "auto"
+  if (backend !== "auto" && backend !== "tui" && backend !== "core") {
+    throw new Error("HERDR_WEB_BACKEND must be auto, tui or core")
+  }
   return {
+    backend,
     host: env.HERDR_WEB_HOST ?? "127.0.0.1",
     port: Number.isFinite(parsed) ? parsed : 7331,
     socketPath: env.HERDR_SOCKET_PATH ?? resolveSocketPath(env),
