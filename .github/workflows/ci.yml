@@ -3,12 +3,32 @@ name: CI
 on:
   push:
     branches: [master]
+    paths-ignore:
+      - "**.md"
+      - "**.mdx"
+      - "**.rst"
+      - "docs/**"
   pull_request:
+    paths-ignore:
+      - "**.md"
+      - "**.mdx"
+      - "**.rst"
+      - "docs/**"
   # Secrets are used only after merging; jobs never check out an unmerged PR head.
   pull_request_target:
     types: [closed]
     branches: [master]
+    paths-ignore:
+      - "**.md"
+      - "**.mdx"
+      - "**.rst"
+      - "docs/**"
   workflow_dispatch:
+    inputs:
+      deploy:
+        description: Deploy master to Cloudflare after validation
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -54,7 +74,9 @@ jobs:
   deploy:
     name: Deploy to Cloudflare Workers
     needs: validate
-    if: github.event_name == 'pull_request_target' && github.event.pull_request.merged == true && github.event.pull_request.base.ref == 'master'
+    if: >-
+      (github.event_name == 'pull_request_target' && github.event.pull_request.merged == true && github.event.pull_request.base.ref == 'master') ||
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/master' && inputs.deploy)
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
