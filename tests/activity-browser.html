@@ -34,8 +34,8 @@ function check(value, message) {
   lines.push(`PASS ${message}`)
   result.textContent = lines.join("\n")
 }
-async function until(predicate) {
-  const deadline = Date.now() + 15000
+async function until(predicate, timeout = 15000) {
+  const deadline = Date.now() + timeout
   while (!(await predicate())) {
     if (Date.now() >= deadline) throw new Error("Timed out waiting for app state")
     await pause(40)
@@ -149,6 +149,31 @@ try {
   doc = frame.contentDocument
   await until(async () => (await stats()).paneReads > beforeReload.paneReads)
   check(true, "Reload restores the paired pane and reads it after showing the detail view")
+  Object.defineProperty(doc, "visibilityState", { configurable: true, get: () => visibility })
+  setVisibility("visible")
+  for (const fault of ["drop", "pause"]) {
+    const previousOutput = doc.querySelector("#terminal-view").textContent
+    await fetch(`/check/${fault}`, { method: "POST" })
+    try {
+      await until(() => doc.querySelector("#connection").textContent === "reconnecting", 25000)
+      check(
+        !doc.querySelector("#screen-detail").classList.contains("hidden") &&
+          doc.querySelector("#terminal-view").textContent.includes("recovery-check") &&
+          doc.querySelector("#remote-banner").textContent.includes("Reconnecting"),
+        `${fault}: connection failure keeps the terminal visible and offers automatic recovery`,
+      )
+    } finally {
+      if (fault === "pause") await fetch("/check/resume", { method: "POST" })
+    }
+    await until(
+      () =>
+        doc.querySelector("#connection").classList.contains("online") &&
+        doc.querySelector("#remote-banner").classList.contains("hidden") &&
+        doc.querySelector("#terminal-view").textContent.includes("recovery-check") &&
+        doc.querySelector("#terminal-view").textContent !== previousOutput,
+    )
+    check(true, `${fault}: automatic reconnect resumes new output in the original terminal without pairing again`)
+  }
   result.textContent += "\n\nALL CHECKS PASSED"
   document.title = "PASS — Page activity checks"
 } catch (error) {
