@@ -4,7 +4,8 @@ import { appendAppearanceControl } from "./appearance.js"
 import { ICONS } from "./icons.js"
 import { TerminalInput } from "./input.js"
 import { KeyToolbar } from "./key-toolbar.js"
-import { paneNumbers, statusClass } from "./session-list.js"
+import { agentStatus, agentStatusLabel, detailNavigation } from "./navigation-state.js"
+import { paneNumbers } from "./session-list.js"
 import type { FitMode } from "./terminal.js"
 import { terminalSelection } from "./terminal-selection.js"
 
@@ -14,7 +15,7 @@ export interface DetailCallbacks {
   sendKeys(pane: PaneRecord, keys: string[]): Promise<void>
   restartAgent(pane: PaneRecord, continueAfter: boolean): Promise<void>
   toggleTree(): void
-  back(): void
+  showList(): void
   status(message: string, isError: boolean): void
   setFitMode(mode: FitMode): void
   paneSize(): { cols: number; rows: number }
@@ -54,9 +55,15 @@ export class DetailScreen {
   private pane: PaneRecord | null = null
   private mode: FitMode = "wrap"
   private actionSignature = ""
+  private tabSignature = ""
+  private connected = true
 
   private readonly tabSwitch = el<HTMLButtonElement>("tab-switch")
   private readonly tabNumber = el<HTMLSpanElement>("tab-number")
+  private readonly staticNumber = el<HTMLSpanElement>("tab-number-static")
+  private readonly treeToggle = el<HTMLButtonElement>("tree-toggle")
+  private readonly detailMore = el<HTMLButtonElement>("detail-more")
+  private readonly statusSeparator = el<HTMLSpanElement>("detail-status-separator")
   private readonly tabMenu = el<HTMLDivElement>("tab-menu")
   private readonly actionMenu = el<HTMLDivElement>("action-menu")
   private readonly detailDot = el<HTMLSpanElement>("detail-dot")
@@ -80,13 +87,13 @@ export class DetailScreen {
     this.input = new TerminalInput(this.commandInput, this.canvas, {
       sendText: (text) => {
         const pane = this.pane
-        if (pane !== null) {
+        if (pane !== null && this.connected) {
           void this.actions.sendText(pane, text)
         }
       },
       sendKeys: (keys) => {
         const pane = this.pane
-        if (pane !== null) {
+        if (pane !== null && this.connected) {
           void this.actions.sendKeys(pane, keys)
         }
       },
@@ -108,10 +115,6 @@ export class DetailScreen {
   }
 
   private wire(): void {
-    el<HTMLButtonElement>("detail-back").addEventListener("click", () => {
-      this.closeMenus()
-      this.actions.back()
-    })
     el<HTMLButtonElement>("tree-toggle").addEventListener("click", () => {
       this.closeMenus()
       this.actions.toggleTree()
@@ -121,6 +124,8 @@ export class DetailScreen {
         this.keyToolbar.closeMenu()
         this.renderActionMenu()
         this.actionMenu.classList.remove("hidden")
+        this.detailMore.setAttribute("aria-expanded", "true")
+        this.actionMenu.querySelector<HTMLButtonElement>("button")?.focus()
         this.closeTabMenu()
       } else {
         this.closeActionMenu()
@@ -128,14 +133,29 @@ export class DetailScreen {
     })
 
     this.tabSwitch.addEventListener("click", () => {
+      if (this.tabSwitch.disabled || this.tabSwitch.classList.contains("hidden")) return
       if (this.tabMenu.classList.contains("hidden")) {
         this.keyToolbar.closeMenu()
         this.renderTabMenu()
         this.tabMenu.classList.remove("hidden")
+        this.tabSwitch.setAttribute("aria-expanded", "true")
+        this.tabMenu.querySelector<HTMLButtonElement>("button")?.focus()
         this.closeActionMenu()
       } else {
         this.closeTabMenu()
       }
+    })
+
+    document.addEventListener("keydown", (event) => {
+      if (event.key !== "Escape") return
+      const tabOpen = !this.tabMenu.classList.contains("hidden")
+      const actionOpen = !this.actionMenu.classList.contains("hidden")
+      if (!tabOpen && !actionOpen) return
+      event.preventDefault()
+      event.stopPropagation()
+      this.closeMenus()
+      if (tabOpen) this.tabSwitch.focus()
+      else this.detailMore.focus()
     })
 
     this.keysToggle.addEventListener("click", () => {
@@ -181,8 +201,24 @@ export class DetailScreen {
   }
 
   private renderTabMenu(): void {
-    this.tabMenu.replaceChildren()
     const snapshot = this.snapshot
+    const signature = JSON.stringify([
+      this.pane?.pane_id,
+      snapshot?.workspaces.map((workspace) => workspace.workspace_id),
+      snapshot?.tabs.map((tab) => [tab.tab_id, tab.label]),
+      snapshot?.panes.map((pane) => [
+        pane.pane_id,
+        pane.tab_id,
+        pane.workspace_id,
+        pane.title,
+        pane.terminal_title_stripped,
+        pane.agent,
+        agentStatus(pane, this.connected),
+      ]),
+    ])
+    if (signature === this.tabSignature) return
+    this.tabSignature = signature
+    this.tabMenu.replaceChildren()
     if (snapshot === null) {
       return
     }
@@ -203,8 +239,9 @@ export class DetailScreen {
           label.textContent = `${tab.label || tab.tab_id} · ${title}`
           const hint = document.createElement("span")
           hint.className = "popover-hint"
-          hint.textContent = pane.agent_status
-          text.append(label, hint)
+          hint.textContent = agentStatusLabel(agentStatus(pane, this.connected))
+          text.append(label)
+          if (hint.textContent) text.append(hint)
           item.append(glyph, text)
           item.addEventListener("click", () => {
             this.closeMenus()
@@ -223,6 +260,7 @@ export class DetailScreen {
       this.pane?.pane_id,
       this.pane?.agent,
       this.pane?.agent_session,
+      this.connected,
       connection,
     ])
     const size = this.actions.paneSize()
@@ -234,6 +272,13 @@ export class DetailScreen {
     }
     this.actionSignature = signature
     this.actionMenu.replaceChildren()
+    this.actionMenu.appendChild(
+      this.item(ICONS.folder, "All terminals", "Open the terminal list and connection settings", () => {
+        this.closeMenus()
+        this.actions.showList()
+      }),
+    )
+    this.actionMenu.appendChild(this.separator())
 
     const modes: { key: FitMode; label: string; hint: string; glyph: string }[] = [
       { key: "wrap", label: "Wrap to Phone", hint: "Wrap wide output at the current window width", glyph: ICONS.wrap },
@@ -285,7 +330,7 @@ export class DetailScreen {
 
   private renderAgentActions(): void {
     const pane = this.pane
-    if (pane === null) {
+    if (pane === null || !this.connected) {
       return
     }
     const kind = agentKind(pane)
@@ -298,7 +343,7 @@ export class DetailScreen {
     this.actionMenu.appendChild(
       this.item(ICONS.restart, `Restart ${label}`, "Quit the agent and start it again", () => {
         this.closeActionMenu()
-        if (this.pane !== null) void this.actions.restartAgent(this.pane, false)
+        if (this.pane !== null && this.connected) void this.actions.restartAgent(this.pane, false)
       }),
     )
     this.actionMenu.appendChild(
@@ -308,7 +353,7 @@ export class DetailScreen {
         canContinue ? "Open the same session and carry on" : "This pane has no session to open",
         () => {
           this.closeActionMenu()
-          if (this.pane !== null) void this.actions.restartAgent(this.pane, true)
+          if (this.pane !== null && this.connected) void this.actions.restartAgent(this.pane, true)
         },
         false,
         !canContinue,
@@ -365,8 +410,14 @@ export class DetailScreen {
     this.actions.setFitMode(mode)
   }
 
-  update(snapshot: SessionSnapshot | null, pane: PaneRecord | null): void {
+  update(snapshot: SessionSnapshot | null, pane: PaneRecord | null, connected = true): void {
     this.snapshot = snapshot
+    this.connected = connected
+    const navigation = detailNavigation(snapshot, pane, connected)
+    this.tabSwitch.classList.toggle("hidden", !navigation.switcher)
+    this.staticNumber.classList.toggle("hidden", navigation.switcher)
+    this.treeToggle.classList.toggle("hidden", !navigation.tree)
+    if (!navigation.switcher || !connected) this.closeTabMenu()
     const paneId = pane?.pane_id ?? null
     if (paneId !== this.inputPaneId) {
       this.actions.clearSelection?.()
@@ -376,17 +427,25 @@ export class DetailScreen {
       this.inputPaneId = paneId
     }
     this.pane = pane
-    this.input.setEnabled(pane !== null)
-    this.keyToolbar.setEnabled(pane !== null)
-    this.commandInput.disabled = pane === null
-    this.commandSend.disabled = pane === null
-    this.keyboardToggle.disabled = pane === null
+    this.input.setEnabled(navigation.input)
+    this.keyToolbar.setEnabled(navigation.input)
+    this.commandInput.disabled = !navigation.input
+    this.commandSend.disabled = !navigation.input
+    this.keyboardToggle.disabled = !navigation.input
+    this.commandInput.placeholder = connected ? "Tap to show keyboard" : "Reconnect to send input"
+    this.keysToggle.disabled = !navigation.input
+    this.tabSwitch.disabled = !connected
+    this.tabSwitch.title = connected ? "Switch terminal" : "Reconnect to switch terminals"
+    this.detailDot.classList.toggle("hidden", pane === null || agentStatus(pane, connected) === "")
+    this.detailStatus.classList.toggle("hidden", pane === null || agentStatus(pane, connected) === "")
+    this.statusSeparator.classList.toggle("hidden", pane === null || agentStatus(pane, connected) === "")
 
     if (pane === null) {
       this.tabNumber.textContent = "—"
-      this.detailStatus.textContent = "no pane"
+      this.staticNumber.textContent = "—"
+      this.detailStatus.textContent = ""
       this.detailTitle.textContent = ""
-      this.detailDot.className = "dot"
+      this.detailDot.className = "dot hidden"
       if (!this.actionMenu.classList.contains("hidden")) {
         this.renderActionMenu()
       }
@@ -395,12 +454,15 @@ export class DetailScreen {
 
     const number = paneNumbers(snapshot?.panes ?? []).get(pane.pane_id)
     this.tabNumber.textContent = number === undefined ? "—" : String(number)
-    this.detailStatus.textContent = pane.agent_status
+    this.staticNumber.textContent = this.tabNumber.textContent
+    this.detailStatus.textContent = agentStatusLabel(agentStatus(pane, connected))
     // The name under the number is the workspace, the Alma app names it
     // that way too.
     const workspace = snapshot?.workspaces.find((w) => w.workspace_id === pane.workspace_id)
     this.detailTitle.textContent = workspace?.label || pane.terminal_title_stripped || pane.title || pane.pane_id
-    this.detailDot.className = `dot ${statusClass(pane.agent_status)}`
+    const status = agentStatus(pane, connected)
+    this.detailDot.className = status ? `dot ${status}` : "dot hidden"
+    if (!this.tabMenu.classList.contains("hidden")) this.renderTabMenu()
     if (!this.actionMenu.classList.contains("hidden")) {
       this.renderActionMenu()
     }
@@ -419,6 +481,7 @@ export class DetailScreen {
 
   closeActionMenu(): void {
     this.actionMenu.classList.add("hidden")
+    this.detailMore.setAttribute("aria-expanded", "false")
   }
 
   closeMenus(): void {

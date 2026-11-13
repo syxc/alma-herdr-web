@@ -32,7 +32,9 @@
   --hover: rgba(255, 255, 255, 0.04);
   --popover-line: rgba(255, 255, 255, 0.07);
   --popover-shadow: rgba(0, 0, 0, 0.6);
-  --online-line: #2a4557;
+  --success-text: #8fc99c;
+  --online-line: #385544;
+  --connecting-line: #665039;
   --offline-line: #4a2626;
   --selection: rgba(98, 175, 236, 0.12);
   color-scheme: dark;
@@ -57,7 +59,9 @@
   --hover: rgba(0, 0, 0, 0.04);
   --popover-line: #dce0e6;
   --popover-shadow: rgba(25, 35, 50, 0.16);
-  --online-line: #94b3b8;
+  --success-text: #287342;
+  --online-line: #a0bca8;
+  --connecting-line: #ccb58c;
   --offline-line: #dda5a9;
   --selection: rgba(114, 153, 160, 0.15);
   color-scheme: light;
@@ -375,54 +379,60 @@ button.active {
 .app-bar {
   position: relative;
   display: grid;
-  grid-template-columns: 50px minmax(0, 1fr) auto;
+  --bar-side: 60px;
+  grid-template-columns: var(--bar-side) minmax(0, 1fr) var(--bar-side);
   align-items: center;
-  gap: 10px;
+  gap: 0;
   padding: 10px 19px;
   height: 70px;
   min-height: 70px;
   flex: none;
 }
 .app-bar > .round-outline {
+  grid-column: 1;
+  grid-row: 1;
   justify-self: start;
 }
 .app-bar > :is(.pill-group, .app-bar-right) {
+  grid-column: 3;
+  grid-row: 1;
   justify-self: end;
 }
 
-/* The list title uses the available left edge, including when no exit is shown. */
-#screen-list .app-bar {
-  display: flex;
-}
-
-/* The bar of one terminal keeps the number of the tab and the state of the
-   pane on the left, the way the Alma app puts them. */
-#screen-detail .app-bar {
-  grid-template-columns: auto 1fr auto;
-  gap: 0;
+/* Equal side columns keep the title centered when actions appear or disappear. */
+#screen-list .app-bar:has(#list-new:not(.hidden)) {
+  --bar-side: 120px;
 }
 
 .app-bar-center {
+  grid-column: 2;
+  grid-row: 1;
   min-width: 0;
+  height: 100%;
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
   gap: 0;
 }
 
-#screen-list .app-bar-center {
-  flex: 1;
-  align-items: flex-start;
-}
-
 .app-bar-title {
-  display: flex;
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) 24px;
   align-items: center;
+  max-width: 100%;
   gap: 6px;
   font-size: 18px;
   font-weight: 600;
   color: var(--fg-strong);
   white-space: nowrap;
+}
+#list-heading {
+  grid-column: 2;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: center;
 }
 .app-bar-title .mark {
   display: block;
@@ -435,6 +445,8 @@ button.active {
   mask-composite: intersect;
 }
 .app-bar-title .signal {
+  grid-column: 3;
+  justify-self: center;
   color: var(--fg-muted);
   flex: none;
 }
@@ -442,7 +454,8 @@ button.active {
 /* The round button and the pill at the right of the bar. */
 .app-bar-right {
   display: grid;
-  grid-template-columns: repeat(2, 60px);
+  grid-auto-flow: column;
+  grid-auto-columns: 60px;
   align-items: center;
   justify-items: center;
   gap: 0;
@@ -550,6 +563,16 @@ button.active {
   border-radius: var(--radius-control);
   cursor: pointer;
 }
+.tab-number-static {
+  display: flex;
+  align-items: center;
+  height: 32px;
+  padding: 0 8px;
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--fg-strong);
+}
+
 .tab-switch .chevron {
   color: var(--fg-muted);
   flex: none;
@@ -1166,8 +1189,12 @@ button.active {
   color: var(--fg-muted);
 }
 .pill.online {
-  color: var(--accent-text);
+  color: var(--success-text);
   border-color: var(--online-line);
+}
+.pill.connecting {
+  color: var(--warn);
+  border-color: var(--connecting-line);
 }
 .pill.offline {
   color: var(--danger-text);
@@ -1665,9 +1692,28 @@ button.active {
   width: 20px;
   height: 20px;
 }
-@media (max-width: 360px) {
-  .screen:not(.pairing-home) .app-bar-title .mark,
-  .app-bar-title .signal {
+@media (max-width: 430px) {
+  .app-bar {
+    --bar-side: 50px;
+  }
+  #screen-list .app-bar:has(#list-new:not(.hidden)) {
+    --bar-side: 88px;
+  }
+  .app-bar-right,
+  .app-bar > .pill-group {
+    grid-auto-columns: 44px;
+  }
+  .app-bar .pill-button {
+    width: 44px;
+  }
+  .screen:not(.pairing-home) .app-bar-title {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+  }
+  .screen:not(.pairing-home) #list-heading {
+    grid-column: 1;
+  }
+  .screen:not(.pairing-home) .app-bar-title :is(.mark, .signal) {
     display: none;
   }
 }

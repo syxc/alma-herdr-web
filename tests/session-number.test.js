@@ -1,6 +1,7 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
 import { DetailScreen } from "../web/dist/detail.js"
+import { agentStatus, detailNavigation } from "../web/dist/navigation-state.js"
 import { renderSessionList } from "../web/dist/session-list.js"
 
 function element() {
@@ -8,8 +9,12 @@ function element() {
     children: [],
     dataset: {},
     textContent: "",
-    className: "",
-    classList: { contains: () => true },
+    className: "hidden",
+    attributes: {},
+    classList: { contains: () => true, toggle() {}, add() {} },
+    setAttribute(name, value) {
+      this.attributes[name] = value
+    },
     append(...items) {
       this.children.push(...items)
     },
@@ -36,12 +41,20 @@ function environment(t) {
   const view = Object.create(DetailScreen.prototype)
   Object.assign(view, {
     actions: {},
+    connected: true,
     inputPaneId: null,
     input: { setEnabled() {}, reset() {} },
     keyToolbar: { setEnabled() {}, reset() {} },
     commandInput: {},
     commandSend: {},
     keyboardToggle: {},
+    keysToggle: {},
+    tabSwitch: element(),
+    staticNumber: element(),
+    treeToggle: element(),
+    detailMore: element(),
+    tabMenu: element(),
+    statusSeparator: element(),
     tabNumber: element(),
     detailStatus: element(),
     detailTitle: element(),
@@ -133,4 +146,79 @@ test("split panes and multiple workspaces retain the same global numbering", (t)
   for (const [index, pane] of state.panes.entries()) {
     assert.deepEqual(renderedNumbers(view, state, pane), [String(index + 1), String(index + 1)])
   }
+})
+
+test("agent status requires an explicit state, an agent and a live connection", () => {
+  for (const status of ["working", "blocked", "done"]) {
+    const pane = { agent: "pi", agent_status: status }
+    assert.equal(agentStatus(pane), status)
+    assert.equal(agentStatus(pane, false), "")
+    assert.equal(agentStatus({ ...pane, agent: null }), "")
+    assert.equal(agentStatus({ ...pane, agent: "" }), "")
+  }
+  for (const status of ["unknown", "idle", "exited", "finished", "busy", ""]) {
+    assert.equal(agentStatus({ agent: "pi", agent_status: status }), "")
+  }
+})
+
+test("unknown and disconnected terminals never claim to be settled", (t) => {
+  environment(t)
+  const state = fixture()
+  state.panes = ["unknown", "idle", "exited", "done", "working"].map((agent_status, index) => ({
+    ...state.panes[0],
+    pane_id: `neutral-${index}`,
+    agent_status,
+    agent: index === 4 ? null : "pi",
+  }))
+  const list = element()
+  const options = { snapshot: state, selectedPaneId: null, onPick() {} }
+  renderSessionList(list, options)
+  const headings = () =>
+    list.children.filter((node) => node.className === "section-head").map((node) => node.children[0].textContent)
+  assert.deepEqual(headings(), ["Settled", "Terminals"])
+  renderSessionList(list, { ...options, connected: false })
+  assert.deepEqual(headings(), ["Terminals"])
+  assert.equal(list.children.filter((node) => node.dataset.pane).length, 5)
+  for (const row of list.children.filter((node) => node.dataset.pane)) {
+    assert.equal(
+      row.children[1].children.some((node) => node.className.startsWith("dot")),
+      false,
+    )
+  }
+})
+
+test("detail navigation covers zero, one, multiple, offline and removed panes", () => {
+  const state = fixture()
+  const pane = state.panes[0]
+  assert.deepEqual(detailNavigation(null, null, false), { input: false, switcher: false, tree: false })
+  assert.deepEqual(detailNavigation({ ...state, panes: [pane] }, pane, true), {
+    input: true,
+    switcher: false,
+    tree: false,
+  })
+  assert.deepEqual(detailNavigation(state, pane, true), { input: true, switcher: true, tree: true })
+  assert.deepEqual(detailNavigation(state, pane, false), { input: false, switcher: true, tree: true })
+  assert.deepEqual(detailNavigation({ ...state, panes: [] }, pane, true), {
+    input: false,
+    switcher: false,
+    tree: false,
+  })
+})
+
+test("detail disconnect disables input and clears status until a fresh connection", (t) => {
+  const view = environment(t)
+  const state = fixture()
+  const pane = state.panes.at(-1)
+  view.update(state, pane, true)
+  assert.equal(view.detailStatus.textContent, "Working")
+  assert.equal(view.commandInput.disabled, false)
+  view.update(state, pane, false)
+  assert.equal(view.detailStatus.textContent, "")
+  assert.equal(view.detailDot.className, "dot hidden")
+  assert.equal(view.commandInput.disabled, true)
+  assert.equal(view.commandSend.disabled, true)
+  assert.equal(view.keyboardToggle.disabled, true)
+  view.update(state, pane, true)
+  assert.equal(view.commandInput.disabled, false)
+  assert.equal(view.detailStatus.textContent, "Working")
 })

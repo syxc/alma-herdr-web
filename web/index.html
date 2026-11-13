@@ -76,7 +76,7 @@
       <aside id="sidebar">
         <header class="sidebar-header">
           <span class="brand">Alma herdr</span>
-          <span id="connection" class="pill">connecting</span>
+          <span id="connection" class="pill connecting">connecting</span>
         </header>
         <div id="tree" class="tree"></div>
       </aside>
@@ -87,7 +87,7 @@
         <!-- The list of the terminals that are open. -->
         <section id="screen-list" class="screen">
           <header class="app-bar">
-            <button id="list-back" class="round-outline" type="button" aria-label="Leave the session">
+            <button id="list-back" class="round-outline hidden" type="button" aria-label="Back to the terminals">
               <svg
                 viewBox="0 0 24 24"
                 width="21"
@@ -136,7 +136,14 @@
               </span>
             </div>
             <div class="pill-group">
-              <button id="list-more" class="pill-button" type="button" aria-label="More">
+              <button
+                id="list-more"
+                class="pill-button"
+                type="button"
+                aria-label="More"
+                aria-expanded="false"
+                aria-controls="list-menu"
+              >
                 <svg viewBox="0 0 24 24" width="19" height="19" fill="currentColor" aria-hidden="true">
                   <circle cx="6" cy="12" r="1.7" />
                   <circle cx="12" cy="12" r="1.7" />
@@ -145,7 +152,7 @@
               </button>
               <button
                 id="list-new"
-                class="pill-button"
+                class="pill-button hidden"
                 type="button"
                 aria-label="New Tab"
                 aria-expanded="false"
@@ -257,23 +264,36 @@
         <!-- One terminal, with the keys below it. -->
         <section id="screen-detail" class="screen hidden">
           <header class="app-bar">
-            <button id="detail-back" class="round-outline" type="button" aria-label="Back to the terminals">
+            <button
+              id="tree-toggle"
+              class="round-outline hidden"
+              type="button"
+              aria-label="Show the sessions"
+              aria-expanded="false"
+              aria-controls="sidebar"
+            >
               <svg
                 viewBox="0 0 24 24"
                 width="21"
                 height="21"
                 fill="none"
                 stroke="currentColor"
-                stroke-width="2.2"
+                stroke-width="2"
                 stroke-linecap="round"
-                stroke-linejoin="round"
                 aria-hidden="true"
               >
-                <path d="M15 4.5L7.5 12l7.5 7.5" />
+                <path d="M4 7h16M4 12h16M4 17h16" />
               </svg>
             </button>
             <div class="app-bar-center">
-              <button id="tab-switch" class="tab-switch" type="button" aria-haspopup="true" aria-expanded="false">
+              <button
+                id="tab-switch"
+                class="tab-switch hidden"
+                type="button"
+                aria-label="Switch terminal"
+                aria-expanded="false"
+                aria-controls="tab-menu"
+              >
                 <span id="tab-number">1</span>
                 <svg
                   class="chevron"
@@ -290,30 +310,24 @@
                   <path d="M6 9.5l6 6 6-6" />
                 </svg>
               </button>
+              <span id="tab-number-static" class="tab-number-static">1</span>
               <span class="app-bar-sub">
-                <span id="detail-dot" class="dot"></span>
-                <span id="detail-status">done</span>
-                <span class="sep">·</span>
+                <span id="detail-dot" class="dot hidden" aria-hidden="true"></span>
+                <span id="detail-status" class="hidden"></span>
+                <span id="detail-status-separator" class="sep hidden" aria-hidden="true">·</span>
                 <span id="detail-title">no pane</span>
               </span>
             </div>
             <div class="app-bar-right">
-              <button id="tree-toggle" class="round-outline" type="button" aria-label="Show the sessions">
-                <svg
-                  viewBox="0 0 24 24"
-                  width="21"
-                  height="21"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2"
-                  stroke-linecap="round"
-                  aria-hidden="true"
-                >
-                  <path d="M4 7h16M4 12h16M4 17h16" />
-                </svg>
-              </button>
               <div class="pill-group">
-                <button id="detail-more" class="pill-button" type="button" aria-label="More">
+                <button
+                  id="detail-more"
+                  class="pill-button"
+                  type="button"
+                  aria-label="More"
+                  aria-expanded="false"
+                  aria-controls="action-menu"
+                >
                   <svg viewBox="0 0 24 24" width="19" height="19" fill="currentColor" aria-hidden="true">
                     <circle cx="6" cy="12" r="1.7" />
                     <circle cx="12" cy="12" r="1.7" />
