@@ -325,6 +325,36 @@ test("width and mode changes keep the source character being read in view", asyn
   assert.ok(view.laidOut[top].includes(target), "Original Width keeps the same source character at the top")
 })
 
+test("fit modes reflow or shrink only when content exceeds the viewport", async (t) => {
+  const host = scrollHost()
+  const { view, canvas } = environment(t, Promise.resolve(new Response(bytes)), host)
+  await ready(view)
+  for (const width of [320, 390, 768, 1024, 1440]) {
+    host.clientWidth = width
+    view.resize()
+    for (const cols of [20, 70, 240]) {
+      await view.setContent("X".repeat(cols), 39)
+      const originalWidth = view.paneCols * view.cellWidth
+      const usable = width - 38
+      view.setMode("original")
+      const originalRows = view.laidOut.length
+      assert.equal(view.rowHeight, view.cellHeight)
+      assert.equal(Number.parseFloat(canvas.style.width), Math.max(width, originalWidth + 38))
+      host.scrollLeft = 50
+      view.setMode("wrap")
+      assert.equal(view.rowHeight, view.cellHeight)
+      assert.equal(Number.parseFloat(canvas.style.width), width)
+      assert.equal(host.scrollLeft, 0)
+      assert.equal(view.laidOut.length > originalRows, originalWidth > usable)
+      view.setMode("shrink")
+      assert.equal(view.laidOut.length, originalRows)
+      assert.equal(Number.parseFloat(canvas.style.width), width)
+      assert.equal(view.rowHeight / view.cellHeight, Math.min(1, usable / originalWidth))
+      assert.equal(view.fontSize, 14, "changing mode does not change the source font size")
+    }
+  }
+})
+
 test("hidden terminals defer layout and painting until their viewport returns", async (t) => {
   const host = scrollHost()
   host.clientWidth = 0
