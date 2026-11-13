@@ -4,7 +4,16 @@
   "compatibility_date": "2026-11-10",
   "build": {
     "command": "npm run build:worker",
-    "watch_dir": ["./web/src", "./web/index.html", "./web/style.css", "./scripts/build-worker.mjs"]
+    "watch_dir": [
+      "./web/src",
+      "./web/index.html",
+      "./web/style.css",
+      "./web/tsconfig.json",
+      "./web/vendor/ghostty",
+      "./web/vendor/nerd-fonts",
+      "./scripts/copy-vendor.mjs",
+      "./scripts/build-worker.mjs"
+    ]
   },
   "assets": {
     "directory": "./dist/worker",

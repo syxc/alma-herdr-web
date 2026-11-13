@@ -86,13 +86,22 @@ npm run build:worker
 配置位于 `wrangler.jsonc`，默认 Worker 名为 `alma-herdr-web`。Wrangler 已包含在开发依赖中。
 
 ```bash
-npm run dev:worker        # 本地预览
-npm run check:worker      # 构建并检查，不发布
-npx wrangler login       # 首次使用时登录
-npm run deploy:worker    # 发布或更新同名 Worker
+npm run dev              # Wrangler 本地预览与自动刷新
+npm run check:worker     # 构建并检查，不发布
+npx wrangler login       # 仅手动发布前需要登录
+npm run deploy:worker    # 手动发布或更新同名 Worker
 ```
 
-预览和部署会自动构建。Workers Builds 的部署命令可设为 `npm run deploy:worker`；所需 `CLOUDFLARE_API_TOKEN` 与 `CLOUDFLARE_ACCOUNT_ID` 只放在部署平台的 Secret 或环境变量中。
+`npm run dev` 默认在 <http://127.0.0.1:8787> 本地运行，不需要 Cloudflare 登录。`dev:worker` 保留为兼容入口。修改 Web 源码、HTML、CSS、构建脚本或仓库内的终端资源后，Wrangler 自动重建并刷新页面；生成目录不参与源码监听。可用 `npm run dev -- --port 8788` 更换端口。
+
+自动部署由 `.github/workflows/ci.yml` 执行：推送 `master` 后，隐私检查、lint、完整构建和测试全部通过，才运行部署任务；PR 和手动 CI 检查不部署。后续推送不会中途取消正在运行的部署。
+
+在 GitHub 仓库的 Settings › Secrets and variables › Actions 中添加两个 repository secret：
+
+- `CLOUDFLARE_API_TOKEN`：有目标 Worker 部署权限的 Cloudflare API token。
+- `CLOUDFLARE_ACCOUNT_ID`：目标 Cloudflare account ID。
+
+部署任务使用锁定版本的 Wrangler 自动构建并更新 `wrangler.jsonc` 中的同名 Worker。缺少 Secrets 时明确失败，不回退到个人登录身份。凭据只存入 GitHub Secrets 或本地环境变量，不写入仓库。使用该 GitHub Actions 流程时，应关闭同一 Worker 的 Workers Builds 自动触发，避免两套流程重复发布。
 
 无文件名哈希的资源应使用可重新验证的缓存策略。Workers 的静态资源缓存行为见[官方说明](https://developers.cloudflare.com/workers/static-assets/headers/)。
 
@@ -118,7 +127,7 @@ npm test
 npm run privacy-check
 ```
 
-GitHub Actions 在推送到 `master`、提交 Pull Request 或手动触发时运行同一套检查，使用 Ubuntu 和 Node.js 22。工作流先检查提交快照中的隐私信息，再安装锁定依赖，执行 Biome 检查、构建和测试；构建已包含 agent、Web 和 mock 的类型检查。CI 无需桌面端或部署凭据。
+GitHub Actions 在推送到 `master`、提交 Pull Request 或手动触发时运行同一套检查，使用 Ubuntu 和 Node.js 22。工作流先检查提交快照中的隐私信息，再安装锁定依赖，执行 Biome 检查、构建和测试；构建已包含 agent、Web 和 mock 的类型检查。验证任务无需桌面端或部署凭据；仅 `master` 推送后的部署任务读取 Cloudflare Secrets。
 
 自动测试使用模拟 herdr 与 relay，不依赖真实桌面端。浏览器检查入口：
 
