@@ -251,7 +251,7 @@ export async function readPane(
   source: string,
   format: string,
   lines: number,
-): Promise<{ text: string; revision: number; truncated: boolean } | null> {
+): Promise<{ text: string; revision: number; truncated: boolean; vt?: boolean; cols?: number; rows?: number } | null> {
   if (backend.kind === "alma") {
     const params: Record<string, unknown> = { pane_id: paneId, source, format }
     if (lines > 0) {
@@ -269,6 +269,7 @@ export async function readPane(
       text: String(read.text ?? ""),
       revision: Number(read.revision ?? 0),
       truncated: read.truncated === true,
+      ...nativeSize(read),
     }
   }
   const url =
@@ -289,7 +290,18 @@ export async function readPane(
     text: String(raw.text ?? ""),
     revision: Number(raw.revision ?? 0),
     truncated: raw.truncated === true,
+    ...nativeSize(raw),
   }
+}
+
+function nativeSize(read: Record<string, unknown>): { vt?: true; cols?: number; rows?: number } {
+  if (read.vt !== true) return {}
+  const cols = Number(read.cols)
+  const rows = Number(read.rows)
+  if (!Number.isInteger(cols) || !Number.isInteger(rows) || cols <= 0 || rows <= 0 || cols > 65535 || rows > 65535) {
+    throw new Error("the desktop sent invalid native terminal dimensions")
+  }
+  return { vt: true, cols, rows }
 }
 
 // Serialize writes: concurrent relay requests can reach the pane out of order.

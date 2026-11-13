@@ -355,7 +355,7 @@ async function refreshTerminal(): Promise<void> {
     const read = await readPane(pane.pane_id, "recent", "ansi", 120)
     if (read === null) throw new Error("the desktop did not return its screen")
     if (generation === connectionGeneration && pane.pane_id === selectedPaneId && terminalVisible()) {
-      await terminal.setContent(read.text, pane.viewport_rows)
+      await terminal.setContent(read.text, read.vt ? (read.rows ?? pane.viewport_rows) : pane.viewport_rows, read.cols)
     }
   } catch (error) {
     connectionFailed(error)

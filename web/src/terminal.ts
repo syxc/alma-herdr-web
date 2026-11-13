@@ -24,7 +24,7 @@ export class TerminalView {
   private readonly host: HTMLElement | null
   private readonly surface: HTMLDivElement | null
   private readonly selection: TerminalSelection | null
-  private pendingContent: { text: string; rows: number } | null = null
+  private pendingContent: { text: string; rows: number; cols: number } | null = null
   private readonly kernel = new TerminalKernel()
   private readonly iconFonts = new IconFontLoader(() => this.render())
   private rows: Cell[][] = []
@@ -51,6 +51,7 @@ export class TerminalView {
   private snapTimer: number | null = null
   private text: string | null = null
   private contentRows = 0
+  private contentCols = 0
   private revision = 0
   private usingKernel = false
   private upgradePending = false
@@ -88,7 +89,7 @@ export class TerminalView {
             this.pendingContent = null
             if (pending !== null) {
               const revision = this.revision
-              void this.setContent(pending.text, pending.rows).then(() => {
+              void this.setContent(pending.text, pending.rows, pending.cols).then(() => {
                 // Unchanged queued text still needs a resize deferred during selection.
                 if (revision === this.revision) this.render()
               })
@@ -105,18 +106,22 @@ export class TerminalView {
     this.resize()
   }
 
-  async setContent(text: string, paneRows: number): Promise<void> {
+  async setContent(text: string, paneRows: number, paneCols = 0): Promise<void> {
     if (this.selection?.active()) {
-      this.pendingContent = { text, rows: paneRows }
+      this.pendingContent = { text, rows: paneRows, cols: paneCols }
       return
     }
-    const changed = text !== this.text || paneRows !== this.contentRows
+    const changed = text !== this.text || paneRows !== this.contentRows || paneCols !== this.contentCols
     if (!changed && this.usingKernel) return
     if (changed) {
       this.text = text
       this.contentRows = paneRows
+      this.contentCols = paneCols
       this.revision += 1
       this.usingKernel = false
+    }
+    if (paneCols > 0 && !(await this.kernel.load())) {
+      throw new Error("The terminal kernel is required to display native core output")
     }
     if (this.kernel.ready) {
       await this.replay()
@@ -138,10 +143,11 @@ export class TerminalView {
   private async replay(): Promise<void> {
     if (this.text === null) return
     const revision = this.revision
-    const screen = await this.kernel.setContent(this.text, this.contentRows)
+    const screen = await this.kernel.setContent(this.text, this.contentRows, this.contentCols)
+    if (this.contentCols > 0 && screen === null) throw new Error("The native core screen could not be rendered")
     // Loading may finish after another pane or snapshot has replaced this one.
     if (revision !== this.revision) return
-    this.usingKernel = screen !== null
+    this.usingKernel = screen !== null && !this.selection?.active()
     this.apply(
       screen?.rows ?? parseAnsi(this.text, TERMINAL_COLORS[this.theme].palette).cells,
       screen?.cols ?? 0,
@@ -167,7 +173,7 @@ export class TerminalView {
 
   private apply(rows: Cell[][], cols: number, paneRows: number): void {
     if (this.selection?.active()) {
-      if (this.text !== null) this.pendingContent = { text: this.text, rows: this.contentRows }
+      if (this.text !== null) this.pendingContent = { text: this.text, rows: this.contentRows, cols: this.contentCols }
       return
     }
     this.captureAnchor()

@@ -60,6 +60,37 @@ async function ready(view) {
   await settle()
 }
 
+test("native core screen metadata reaches the renderer and participates in caching", async (t) => {
+  const { view } = environment(t)
+  await view.setContent("1234567890Z", 4, 10)
+  assert.deepEqual(view.size(), { cols: 10, rows: 4 })
+  assert.equal(view.rows[1][0].ch, "Z")
+  await view.setContent("1234567890Z", 4, 20)
+  assert.deepEqual(view.size(), { cols: 20, rows: 4 })
+  assert.equal(view.rows[0][10].ch, "Z")
+  await view.setContent("legacy", 4)
+  assert.equal(view.rows[0].map((cell) => cell.ch).join(""), "legacy")
+})
+
+test("selection during native kernel loading applies the pending screen after release", async (t) => {
+  const pending = Promise.withResolvers()
+  const { view } = environment(t, pending.promise)
+  await view.setContent("old screen", 4)
+  const next = view.setContent("new screen", 4, 80)
+  let selected = true
+  view.selection = { active: () => selected, update() {}, clear() {} }
+  pending.resolve(new Response(bytes))
+  await next
+  await settle()
+  assert.equal(view.rows[0].map((cell) => cell.ch).join(""), "old screen")
+  selected = false
+  const queued = view.pendingContent
+  assert.equal(queued.text, "new screen")
+  assert.equal(queued.cols, 80)
+  await view.setContent(queued.text, queued.rows, queued.cols)
+  assert.equal(view.rows[0].map((cell) => cell.ch).join(""), "new screen")
+})
+
 test("a late kernel repaints the latest snapshot without waiting for another poll", async (t) => {
   const pending = Promise.withResolvers()
   const { view, operations } = environment(t, pending.promise)
