@@ -94,7 +94,7 @@ npm run deploy:worker    # 手动发布或更新同名 Worker
 
 `npm run dev` 默认在 <http://127.0.0.1:8787> 本地运行，不需要 Cloudflare 登录。`dev:worker` 保留为兼容入口。修改 Web 源码、HTML、CSS、构建脚本或仓库内的终端资源后，Wrangler 自动重建并刷新页面；生成目录不参与源码监听。可用 `npm run dev -- --port 8788` 更换端口。
 
-自动部署由 `.github/workflows/ci.yml` 执行：推送 `master` 后，隐私检查、lint、完整构建和测试全部通过，才运行部署任务；PR 和手动 CI 检查不部署。后续推送不会中途取消正在运行的部署。
+自动部署由 `.github/workflows/ci.yml` 执行，仅在包含代码、配置或资源变更的 PR 合并到 `master` 后触发。仅修改 Markdown（`.md`、`.mdx`）、reStructuredText（`.rst`）或 `docs/` 内文件时，不触发自动 CI 或部署；混合代码与文档的变更正常触发。工作流通过 `pull_request_target` 监听 `closed`，并检查 `merged == true`；验证和部署均检出同一个 `merge_commit_sha`，不运行未合并 PR 的代码。隐私检查、lint、完整构建和测试全部通过后才部署。直接推送或强推 `master`、关闭但未合并的 PR 均不部署。GitHub Actions 的 Run workflow 可手动运行检查，不受文档过滤限制；默认不部署，选择 `master` 并勾选 `deploy` 后才会在检查通过后手动发布。后续推送不会中途取消正在运行的部署。
 
 在 GitHub 仓库的 Settings › Secrets and variables › Actions 中添加两个 repository secret：
 
@@ -127,7 +127,7 @@ npm test
 npm run privacy-check
 ```
 
-GitHub Actions 在推送到 `master`、提交 Pull Request 或手动触发时运行同一套检查，使用 Ubuntu 和 Node.js 22。工作流先检查提交快照中的隐私信息，再安装锁定依赖，执行 Biome 检查、构建和测试；构建已包含 agent、Web 和 mock 的类型检查。验证任务无需桌面端或部署凭据；仅 `master` 推送后的部署任务读取 Cloudflare Secrets。
+GitHub Actions 在包含非文档变更的推送到 `master`、Pull Request 或手动触发时运行同一套检查，使用 Ubuntu 和 Node.js 22。工作流先检查提交快照中的隐私信息，再安装锁定依赖，执行 Biome 检查、构建和测试；构建已包含 agent、Web 和 mock 的类型检查。验证任务无需桌面端或部署凭据；仅代码 PR 合并到 `master` 后或明确勾选手动发布时，部署任务读取 Cloudflare Secrets。
 
 自动测试使用模拟 herdr 与 relay，不依赖真实桌面端。浏览器检查入口：
 
