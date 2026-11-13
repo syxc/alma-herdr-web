@@ -102,7 +102,7 @@ try {
     check(!menuItem("Sign out"), "Static site has no sign-out entry")
     check(!visible("list-back") && !visible("remote-banner"), "Unpaired start has no redundant back control or banner")
     check(
-      el("list-heading").textContent === "alma herdr" && el("pair-title").textContent === "Connect to your herdr",
+      el("list-heading").textContent === "Alma herdr" && el("pair-title").textContent === "Connect to your herdr",
       "Unpaired start names herdr as the connection target",
     )
     check(

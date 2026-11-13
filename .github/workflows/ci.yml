@@ -4,6 +4,10 @@ on:
   push:
     branches: [master]
   pull_request:
+  # Secrets are used only after merging; jobs never check out an unmerged PR head.
+  pull_request_target:
+    types: [closed]
+    branches: [master]
   workflow_dispatch:
 
 permissions:
@@ -16,12 +20,14 @@ concurrency:
 jobs:
   validate:
     name: Validate
+    if: github.event_name != 'pull_request_target' || github.event.pull_request.merged == true
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.merge_commit_sha || github.sha }}
           persist-credentials: false
 
       - name: Set up Node.js
@@ -48,13 +54,14 @@ jobs:
   deploy:
     name: Deploy to Cloudflare Workers
     needs: validate
-    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    if: github.event_name == 'pull_request_target' && github.event.pull_request.merged == true && github.event.pull_request.base.ref == 'master'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - name: Check out validated commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.merge_commit_sha || github.sha }}
           persist-credentials: false
 
       - name: Set up Node.js

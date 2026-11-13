@@ -797,7 +797,7 @@ async function applyPairing(source: string | Pairing): Promise<boolean> {
 function updatePairingView(): void {
   const home = !localApi && snapshot === null
   listScreen.classList.toggle("pairing-home", home)
-  el("list-heading").textContent = home ? "alma herdr" : "Terminals"
+  el("list-heading").textContent = home ? "Alma herdr" : "Terminals"
   const back = el<HTMLButtonElement>("list-back")
   back.classList.toggle("hidden", localApi ? !authRequired : snapshot === null)
   back.setAttribute("aria-label", localApi ? "End desktop access" : "Connect to herdr on another machine")
