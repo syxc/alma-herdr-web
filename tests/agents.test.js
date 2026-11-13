@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
 
-import { agentKind, agentLabel, agentName, continuePrompt, resumeArgs } from "../web/dist/agents.js"
+import { agentKind, agentLabel, agentName, resumeArgs } from "../web/dist/agents.js"
 import { restartAgent } from "../web/dist/restart.js"
 
 /**
@@ -98,10 +98,6 @@ test("the name of an agent holds the pane, so two panes differ", () => {
 
 test("the name of an agent stays the same when the agent restarts", () => {
   assert.equal(agentName(agentPane("claude", "id", "a")), agentName(agentPane("claude", "id", "b")))
-})
-
-test("the prompt of a continued agent asks it to carry on", () => {
-  assert.equal(continuePrompt(agentPane("claude", "id", "a")), "继续")
 })
 
 /**

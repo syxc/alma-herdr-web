@@ -263,11 +263,11 @@ export class KeyToolbar {
       ctrlKey: this.modifiers.has("ctrl") || event?.ctrlKey,
       altKey: this.modifiers.has("alt") || event?.altKey,
       shiftKey: this.modifiers.has("shift") || event?.shiftKey,
-    } as KeyboardEvent)
+    })
     if (action === null) return false
     this.clearModifiers()
-    if (action.kind === "text") this.input.type(action.text ?? "")
-    else this.input.sendSpecial(action.keys ?? [])
+    if (action.kind === "text") this.input.type(action.text)
+    else this.input.sendSpecial(action.keys)
     return true
   }
 

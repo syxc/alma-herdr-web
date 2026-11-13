@@ -19,8 +19,6 @@ export interface AgentSpec {
   sessionKinds: SessionKind[]
   /** The arguments that open the session again, without the command itself. */
   resumeArgs(value: string): string[]
-  /** What the agent gets when the reader wants it to carry on. */
-  continuePrompt: string
 }
 
 /**
@@ -40,35 +38,30 @@ const SPECS: AgentSpec[] = [
     label: "Claude Code",
     sessionKinds: ["id"],
     resumeArgs: (value) => ["--resume", value],
-    continuePrompt: "继续",
   },
   {
     kind: "codex",
     label: "Codex",
     sessionKinds: ["id"],
     resumeArgs: (value) => ["resume", value],
-    continuePrompt: "继续",
   },
   {
     kind: "pi",
     label: "Pi",
     sessionKinds: ["id", "path"],
     resumeArgs: (value) => ["--session", value],
-    continuePrompt: "继续",
   },
   {
     kind: "opencode",
     label: "OpenCode",
     sessionKinds: ["id"],
     resumeArgs: (value) => ["--session", value],
-    continuePrompt: "继续",
   },
   {
     kind: "omp",
     label: "omp",
     sessionKinds: ["id", "path"],
     resumeArgs: (value) => [`--resume=${value}`],
-    continuePrompt: "继续",
   },
 ]
 
@@ -129,9 +122,7 @@ export function resumeArgs(pane: PaneRecord): string[] | null {
 /**
  * The prompt that makes a resumed agent carry on.
  */
-export function continuePrompt(pane: PaneRecord): string {
-  return agentSpec(agentKind(pane))?.continuePrompt ?? "继续"
-}
+export const CONTINUE_PROMPT = "继续"
 
 /**
  * The name the agent gets when it starts again.

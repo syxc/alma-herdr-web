@@ -401,21 +401,17 @@ async function command(method: string, path: string, params: Record<string, unkn
 }
 
 export function sendText(paneId: string, text: string): Promise<string | null> {
-  return enqueue(() => sendTextNow(paneId, text))
-}
-
-async function sendTextNow(paneId: string, text: string): Promise<string | null> {
-  const result = await command("pane.send_text", "/api/pane/text", { pane_id: paneId, text })
-  return result.ok ? null : (result.error ?? "send failed")
+  return enqueue(async () => {
+    const result = await command("pane.send_text", "/api/pane/text", { pane_id: paneId, text })
+    return result.ok ? null : (result.error ?? "send failed")
+  })
 }
 
 export function sendKeys(paneId: string, keys: string[]): Promise<string | null> {
-  return enqueue(() => sendKeysNow(paneId, keys))
-}
-
-async function sendKeysNow(paneId: string, keys: string[]): Promise<string | null> {
-  const result = await command("pane.send_keys", "/api/pane/keys", { pane_id: paneId, keys })
-  return result.ok ? null : (result.error ?? "send failed")
+  return enqueue(async () => {
+    const result = await command("pane.send_keys", "/api/pane/keys", { pane_id: paneId, keys })
+    return result.ok ? null : (result.error ?? "send failed")
+  })
 }
 
 export interface ApiFailure {

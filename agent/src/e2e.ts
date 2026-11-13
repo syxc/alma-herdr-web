@@ -1,10 +1,10 @@
 import {
   createCipheriv,
   createDecipheriv,
-  createHmac,
   createPublicKey,
   diffieHellman,
   generateKeyPairSync,
+  hkdfSync,
   type KeyObject,
   randomBytes,
 } from "node:crypto"
@@ -36,21 +36,8 @@ const FRAME_AAD = Buffer.from("herdr-web/e2e/v1/frame", "utf8")
 const SPKI_PREFIX = Buffer.from("3059301306072a8648ce3d020106082a8648ce3d030107034200", "hex")
 
 /** HKDF-SHA256 with a salt and an info label. */
-export function hkdf(ikm: Buffer, salt: Buffer, info: string, length = 32): Buffer {
-  const prk = createHmac("sha256", salt).update(ikm).digest()
-  const label = Buffer.from(info, "utf8")
-  let previous = Buffer.alloc(0)
-  let output = Buffer.alloc(0)
-  let counter = 1
-  while (output.length < length) {
-    const block = createHmac("sha256", prk)
-      .update(Buffer.concat([previous, label, Buffer.from([counter])]))
-      .digest()
-    previous = block
-    output = Buffer.concat([output, block])
-    counter += 1
-  }
-  return output.subarray(0, length)
+function hkdf(ikm: Buffer, salt: Buffer, info: string): Buffer {
+  return Buffer.from(hkdfSync("sha256", ikm, salt, info, 32))
 }
 
 function encrypt(key: Buffer, nonce: Buffer, plaintext: Buffer, aad: Buffer): Buffer {

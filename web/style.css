@@ -170,7 +170,7 @@ body {
 }
 
 /* Native tap overlays do not follow inset surfaces. Each control draws its own feedback. */
-:where(button, [role="button"], .row, summary, .extra-keys label, select) {
+:where(button, [role="button"], .row, .extra-keys label, select) {
   -webkit-tap-highlight-color: transparent;
   -webkit-user-select: none;
   user-select: none;
@@ -366,10 +366,6 @@ button.active {
   place-items: center;
   cursor: pointer;
 }
-.command-glyph {
-  font-size: 18px;
-  line-height: 1;
-}
 .round-fill:active:enabled {
   filter: brightness(0.92);
 }
@@ -527,9 +523,6 @@ button.active {
   display: grid;
   place-items: center;
   cursor: pointer;
-}
-.pill-button.accent {
-  color: var(--fg);
 }
 #list-new {
   color: var(--accent-text);
@@ -715,10 +708,6 @@ button.active {
   text-align: left;
   cursor: pointer;
 }
-.popover-item:disabled {
-  cursor: default;
-  opacity: 0.45;
-}
 
 .popover-glyph {
   width: 24px;
@@ -769,11 +758,6 @@ button.active {
   padding: 8px 12px 4px;
   font-size: 12px;
   color: var(--fg-muted);
-}
-
-/* The card of the tabs opens in the same place as the other cards. */
-.popover-menu .popover-item {
-  padding: 10px 12px;
 }
 
 /* The terminal -------------------------------------------------------- */
@@ -846,9 +830,6 @@ button.active {
   touch-action: pan-y;
   user-select: none;
   -webkit-user-select: none;
-}
-
-#terminal {
   width: 100%;
   height: 100%;
   display: block;
@@ -934,12 +915,6 @@ button.active {
 .key-chip[aria-pressed="true"]::before {
   border-color: var(--focus-line);
   background: var(--selection);
-}
-.key-chip:disabled,
-.input-action:disabled,
-.keyboard-inline:disabled {
-  opacity: 0.45;
-  cursor: default;
 }
 .extra-keys {
   position: absolute;
@@ -1385,9 +1360,6 @@ button.active {
   flex-direction: column;
   gap: 8px;
 }
-.remote-panel.hidden {
-  display: none;
-}
 .remote-panel .hint {
   margin: 0;
   font-size: 12px;
@@ -1414,12 +1386,12 @@ button.active {
   outline: none;
   border-color: var(--focus-line);
 }
-.remote-state {
+.relay-state {
   font-size: 11px;
   color: var(--fg-muted);
   word-break: break-word;
 }
-.remote-state.error {
+.relay-state.error {
   color: var(--danger-text);
 }
 .relay-pair {
@@ -1427,9 +1399,6 @@ button.active {
   flex-direction: column;
   gap: 6px;
   align-items: flex-start;
-}
-.relay-pair.hidden {
-  display: none;
 }
 .relay-pair img {
   width: 148px;
@@ -1451,38 +1420,6 @@ button.active {
   border-bottom: 1px solid var(--line);
   color: var(--fg-muted);
   font-size: 12px;
-}
-
-/*
- * The pairing stays out of the way: it is a line that opens, not a panel
- * that pushes the list of the terminals down.
- */
-.pair-details {
-  flex: none;
-  border-bottom: 1px solid var(--line);
-}
-.pair-details > summary {
-  padding: 10px 16px;
-  font-size: 13px;
-  color: var(--fg-muted);
-  cursor: pointer;
-  user-select: none;
-}
-.pair-details > summary {
-  list-style: none;
-}
-.pair-details > summary::-webkit-details-marker {
-  display: none;
-}
-.pair-details > summary::marker {
-  content: "";
-}
-.pair-details > summary::after {
-  content: " \25be";
-  float: right;
-}
-.pair-details[open] > summary::after {
-  content: " \25b4";
 }
 
 .pair-panel {
@@ -1621,9 +1558,6 @@ button.active {
   border-bottom: 1px solid var(--line);
   background: var(--surface);
 }
-.scan-panel.hidden {
-  display: none;
-}
 .pair-panel .scan-panel {
   flex: none;
   margin-top: 12px;
@@ -1657,9 +1591,6 @@ button.active {
   gap: 4px;
   align-items: flex-start;
 }
-.relay-pair .qr.hidden {
-  display: none;
-}
 .relay-pair .qr span {
   font-size: 10px;
   color: var(--fg-muted);
@@ -1676,9 +1607,6 @@ button.active {
   line-height: 1.5;
   color: var(--fg-muted);
 }
-.qr-note.hidden {
-  display: none;
-}
 
 /* Pointer hover never becomes a persistent pressed state on touchscreens. */
 @media (hover: hover) and (pointer: fine) {
@@ -1687,7 +1615,6 @@ button.active {
   }
   :where(.session-row, .section-head, .popover-item, .tab-switch):hover:enabled,
   .row:where(:hover),
-  summary:where(:hover),
   .extra-keys label:where(:hover) {
     background-color: var(--hover);
   }
@@ -1705,7 +1632,6 @@ button.active {
 }
 
 .row:active,
-summary:active,
 .extra-keys label:active {
   background: var(--selection);
 }
@@ -1796,9 +1722,6 @@ summary:active,
     inset: 0;
     z-index: 25;
     background: rgba(0, 0, 0, 0.55);
-  }
-  .scrim.hidden {
-    display: none;
   }
 
   .app-bar {

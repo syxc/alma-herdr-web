@@ -1,4 +1,4 @@
-import { agentKind, agentLabel, agentName, continuePrompt, resumeArgs } from "./agents.js"
+import { agentKind, agentLabel, agentName, CONTINUE_PROMPT, resumeArgs } from "./agents.js"
 import type { ApiFailure, PaneRecord } from "./api.js"
 
 export interface RestartCalls {
@@ -72,10 +72,10 @@ async function startAgent(
 }
 
 async function promptAgent(pane: PaneRecord, calls: RestartCalls): Promise<ApiFailure | null> {
-  let failure = await calls.promptAgent(pane.pane_id, continuePrompt(pane))
+  let failure = await calls.promptAgent(pane.pane_id, CONTINUE_PROMPT)
   for (let round = 1; failure !== null && notReady(failure) && round < READY_TRIES; round += 1) {
     await wait(calls, READY_GAP)
-    failure = await calls.promptAgent(pane.pane_id, continuePrompt(pane))
+    failure = await calls.promptAgent(pane.pane_id, CONTINUE_PROMPT)
   }
   return failure
 }

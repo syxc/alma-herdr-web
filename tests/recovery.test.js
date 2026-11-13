@@ -44,6 +44,37 @@ test("malformed pairing input cannot abort startup", () => {
   }
 })
 
+test("pairing payload validation retains string fields and rejects malformed objects", () => {
+  for (const value of [null, [], {}, { relay: "r", token: "t" }, { relay: "r", token: "t", code: 1 }]) {
+    const encoded = Buffer.from(JSON.stringify(value)).toString("base64url")
+    assert.equal(pairing.readHerdrPayload(`#pair=${encoded}`), null)
+  }
+  const payload = { relay: "", token: "", code: "" }
+  assert.deepEqual(pairing.readHerdrPayload(JSON.stringify({ ...payload, extra: true })), payload)
+})
+
+test("corrupt saved pairings fall back to the connection screen", (t) => {
+  const data = storage(t)
+  pairing.savePairing({ kind: "alma", relay: "https://relay.example.com", code: "mock-code" })
+  const key = [...data.keys()][0]
+  for (const value of [
+    null,
+    [],
+    {},
+    { kind: "alma", relay: "r", code: "" },
+    { kind: "alma", code: "c" },
+    { kind: "herdr" },
+    { kind: "herdr", payload: null },
+    { kind: "herdr", payload: [] },
+    { kind: "herdr", payload: { relay: "r", token: 1, code: "c" } },
+  ]) {
+    data.set(key, JSON.stringify(value))
+    assert.equal(pairing.readSavedPairing(), null)
+  }
+  data.set(key, "{")
+  assert.equal(pairing.readSavedPairing(), null)
+})
+
 test("a silent desktop times out instead of keeping the terminal read pending forever", async (t) => {
   const mock = new AlmaMock()
   await mock.start()

@@ -511,6 +511,19 @@
             el("desktop-sharing-close").offsetHeight >= 44,
           `${theme} ${width}px: desktop sharing stays in a bounded dialog outside the workspace sidebar`,
         )
+        const relayState = el("relay-state")
+        relayState.textContent = "Relay unavailable: ".repeat(30)
+        const relayColor = style(relayState).color
+        relayState.classList.add("error")
+        check(
+          style(relayState).fontSize === "11px" &&
+            style(relayState).color !== relayColor &&
+            style(relayState).wordBreak === "break-word" &&
+            sharing.scrollWidth <= sharing.clientWidth,
+          `${theme} ${width}px: relay errors keep the error color and wrap inside the sharing dialog`,
+        )
+        relayState.textContent = ""
+        relayState.classList.remove("error")
         sharing.close()
         check(
           [...el("tree").querySelectorAll(".tree-workspace")].every((workspace) => {

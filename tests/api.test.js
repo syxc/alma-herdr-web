@@ -2,7 +2,7 @@ import assert from "node:assert/strict"
 import { test } from "node:test"
 
 import { AlmaTunnel } from "../web/dist/alma.js"
-import { closeRemote, createTerminalTab, openAlmaRemote, startAgent } from "../web/dist/api.js"
+import { closeRemote, createTerminalTab, openAlmaRemote, sendKeys, sendText, startAgent } from "../web/dist/api.js"
 
 test("New Tab reports an Alma refusal without claiming that a pane was created", async (t) => {
   t.mock.method(AlmaTunnel.prototype, "connect", async () => {})
@@ -45,6 +45,35 @@ test("Alma retains shell readiness error codes for safe startup retries", async 
     code: "agent_pane_busy",
     error: "not an available shell",
   })
+})
+
+test("pane writes stay ordered and continue after a failed send", async (t) => {
+  closeRemote()
+  const started = Promise.withResolvers()
+  const release = Promise.withResolvers()
+  const calls = []
+  t.mock.method(globalThis, "fetch", async (path, options) => {
+    calls.push([path, JSON.parse(options.body)])
+    if (calls.length === 1) {
+      started.resolve()
+      await release.promise
+      throw new Error("mock disconnect")
+    }
+    return new Response(JSON.stringify({ ok: true }))
+  })
+  const first = sendText("pane-a", "hello")
+  await started.promise
+  const second = sendKeys("pane-a", ["enter"])
+  await Promise.resolve()
+  assert.equal(calls.length, 1, "the later write must wait for the first response")
+  const failed = assert.rejects(first, /mock disconnect/)
+  release.resolve()
+  await failed
+  assert.equal(await second, null)
+  assert.deepEqual(calls, [
+    ["/api/pane/text", { pane_id: "pane-a", text: "hello" }],
+    ["/api/pane/keys", { pane_id: "pane-a", keys: ["enter"] }],
+  ])
 })
 
 test("New Tab on the local API retains the new pane ID and does not move focus", async (t) => {

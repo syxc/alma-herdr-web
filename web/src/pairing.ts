@@ -59,10 +59,10 @@ export function readHerdrPayload(source: string): PairingPayload | null {
   try {
     const match = /[#&]pair=([^&\s]+)/.exec(source)
     if (match !== null && match[1] !== undefined) {
-      return parsePayload(decodeBase64Url(match[1]))
+      return parsePayload(JSON.parse(decodeBase64Url(match[1])))
     }
     const trimmed = source.trim()
-    return parsePayload(trimmed.startsWith("{") ? trimmed : decodeBase64Url(trimmed))
+    return parsePayload(JSON.parse(trimmed.startsWith("{") ? trimmed : decodeBase64Url(trimmed)))
   } catch {
     return null
   }
@@ -71,16 +71,20 @@ export function readHerdrPayload(source: string): PairingPayload | null {
 /**
  * Turns a decoded payload into a pairing, or null when it is not one.
  */
-function parsePayload(text: string): PairingPayload | null {
-  try {
-    const parsed = JSON.parse(text) as Partial<PairingPayload>
-    if (typeof parsed.relay !== "string" || typeof parsed.token !== "string" || typeof parsed.code !== "string") {
-      return null
-    }
-    return { relay: parsed.relay, token: parsed.token, code: parsed.code }
-  } catch {
+function parsePayload(value: unknown): PairingPayload | null {
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    !("relay" in value) ||
+    !("token" in value) ||
+    !("code" in value) ||
+    typeof value.relay !== "string" ||
+    typeof value.token !== "string" ||
+    typeof value.code !== "string"
+  ) {
     return null
   }
+  return { relay: value.relay, token: value.token, code: value.code }
 }
 
 /** Hex string to raw bytes, used for the connect code. */
@@ -105,17 +109,20 @@ export function savePairing(pairing: Pairing): void {
 
 export function readSavedPairing(): Pairing | null {
   try {
-    const saved = JSON.parse(sessionStorage.getItem(PAIRING_KEY) ?? "null") as Pairing | null
+    const saved: unknown = JSON.parse(sessionStorage.getItem(PAIRING_KEY) ?? "null")
+    if (typeof saved !== "object" || saved === null || !("kind" in saved)) return null
     if (
-      saved?.kind === "alma" &&
+      saved.kind === "alma" &&
+      "relay" in saved &&
+      "code" in saved &&
       typeof saved.relay === "string" &&
       typeof saved.code === "string" &&
       saved.code.length > 0
     ) {
       return { kind: "alma", relay: saved.relay, code: saved.code }
     }
-    if (saved?.kind === "herdr") {
-      const payload = parsePayload(JSON.stringify(saved.payload))
+    if (saved.kind === "herdr" && "payload" in saved) {
+      const payload = parsePayload(saved.payload)
       if (payload !== null) return { kind: "herdr", payload }
     }
   } catch {

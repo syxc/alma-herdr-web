@@ -204,11 +204,11 @@ export class TerminalInput {
     }
     if (key === "ArrowUp" || key === "ArrowDown") {
       const action = mapKey(event)
-      if (action === null) {
+      if (action?.kind !== "keys") {
         return
       }
       event.preventDefault()
-      this.queue.keys(action.keys ?? [])
+      this.queue.keys(action.keys)
       // History replaces the remote line with text the client does not know.
       this.forget()
       return
@@ -329,9 +329,9 @@ export class TerminalInput {
     }
     event.preventDefault()
     if (action.kind === "text") {
-      this.queue.text(action.text ?? "")
+      this.queue.text(action.text)
     } else {
-      this.queue.keys(action.keys ?? [])
+      this.queue.keys(action.keys)
     }
   }
 

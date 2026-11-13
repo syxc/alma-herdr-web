@@ -1,3 +1,5 @@
+import type { Action } from "./send-queue.js"
+
 /**
  * Translation of browser key events into the key names herdr accepts.
  *
@@ -10,11 +12,8 @@
  * pagedown, so home and end become ctrl+a and ctrl+e, which is what a shell
  * does with them anyway.
  */
-export interface KeyAction {
-  kind: "text" | "keys"
-  text?: string
-  keys?: string[]
-}
+type KeyInput = Pick<KeyboardEvent, "key"> &
+  Partial<Pick<KeyboardEvent, "ctrlKey" | "altKey" | "shiftKey" | "metaKey" | "isComposing" | "keyCode">>
 
 const NAMED: Record<string, string> = {
   Enter: "enter",
@@ -34,7 +33,7 @@ const NAMED: Record<string, string> = {
  */
 const ARROWS = new Set(["up", "down", "left", "right"])
 
-export function mapKey(event: KeyboardEvent): KeyAction | null {
+export function mapKey(event: KeyInput): Action | null {
   if (event.metaKey || event.isComposing || event.keyCode === 229) {
     // The shortcuts of the browser stay with the browser.
     return null

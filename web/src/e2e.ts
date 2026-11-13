@@ -53,11 +53,6 @@ function unbase64(value: string): Bytes {
   return Uint8Array.from(binary, (character) => character.charCodeAt(0))
 }
 
-/** Copies a buffer into one WebCrypto accepts. */
-function toBytes(source: Uint8Array): Bytes {
-  return new Uint8Array(source)
-}
-
 /**
  * URL of a vendored library.
  *
@@ -319,7 +314,7 @@ export class E2EClientSession {
       payload,
       new TextEncoder().encode("herdr-web/e2e/v1/hello-client"),
     )
-    this.send(JSON.stringify({ t: "e2e-hello", n: base64(nonce), c: base64(toBytes(cipher)) }))
+    this.send(JSON.stringify({ t: "e2e-hello", n: base64(nonce), c: base64(cipher) }))
   }
 
   receive(text: string): Promise<void> {
@@ -365,7 +360,7 @@ export class E2EClientSession {
     this.sendCounter += 1
     const plaintext = new TextEncoder().encode(JSON.stringify(frame))
     const cipher = await crypto.seal(key, nonce, plaintext, FRAME_AAD)
-    this.send(JSON.stringify({ t: "e2e", c: base64(toBytes(cipher)) }))
+    this.send(JSON.stringify({ t: "e2e", c: base64(cipher) }))
   }
 
   private async acceptAck(frame: Record<string, unknown>): Promise<void> {
@@ -391,7 +386,7 @@ export class E2EClientSession {
     }
     const peerPoint = unbase64(String(payload.pk ?? ""))
     this.recvPrefix = unbase64(String(payload.pn ?? ""))
-    const shared = await crypto.sharedSecret(this.privateKey, toBytes(peerPoint))
+    const shared = await crypto.sharedSecret(this.privateKey, peerPoint)
     const sendBytes = await crypto.deriveKey(shared, this.psk, new TextEncoder().encode("session-c2a"))
     const recvBytes = await crypto.deriveKey(shared, this.psk, new TextEncoder().encode("session-a2c"))
     this.sendKey = sendBytes

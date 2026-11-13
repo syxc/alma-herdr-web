@@ -1,9 +1,14 @@
 <!doctype html>
 <meta charset="utf-8">
 <title>Icon font browser checks</title>
+<link rel="stylesheet" href="/style.css">
 <link rel="stylesheet" href="/vendor/nerd-fonts/symbols.css">
 <link rel="stylesheet" href="/vendor/nerd-fonts/terminal-symbols/symbols.css">
 <style>
+html,
+body {
+  overflow: auto;
+}
 body {
   background: #282c34;
   color: #dcdfe4;
@@ -48,6 +53,10 @@ function requests() {
 try {
   const canvas = document.querySelector("#terminal")
   const terminal = new TerminalView(canvas)
+  check(
+    getComputedStyle(document.querySelector(".terminal-text")).position === "absolute",
+    "Selection text uses the application overlay layout instead of adding scroll height",
+  )
   const render = terminal.render.bind(terminal)
   let paints = 0
   terminal.render = () => {
@@ -96,6 +105,8 @@ try {
   const reference = document.createElement("canvas")
   reference.width = canvas.width
   reference.height = canvas.height
+  // Canvas text rendering inherits page settings when its context is created.
+  document.body.append(reference)
   const referenceContext = reference.getContext("2d")
   const ratio = devicePixelRatio || 1
   referenceContext.scale(ratio, ratio)
@@ -109,6 +120,7 @@ try {
   const region = [Math.floor(19 * ratio), 0, Math.floor(2 * columnWidth * ratio), Math.floor(19 * ratio)]
   const actualPixels = canvas.getContext("2d").getImageData(...region).data
   const referencePixels = referenceContext.getImageData(...region).data
+  reference.remove()
   check(
     actualPixels.every((value, index) => value === referencePixels[index]),
     "Real permission-line symbols match the bundled glyph pixels without OS symbol fallback",
