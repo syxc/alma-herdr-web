@@ -62,6 +62,13 @@ interface Pending {
   chunks: Bytes[]
 }
 
+interface AlmaStream {
+  opened: () => void
+  fail: (error: Error) => void
+  message: (data: Bytes) => void
+  closed: () => void
+}
+
 const encoder = new TextEncoder()
 const decoder = new TextDecoder()
 
@@ -224,6 +231,7 @@ export class AlmaTunnel {
   /** The frames that come in, one after the other. */
   private incoming: Promise<void> = Promise.resolve()
   private readonly pending = new Map<string, Pending>()
+  private readonly streams = new Map<string, AlmaStream>()
   private ready: Promise<void> = Promise.resolve()
   private markReady: () => void = () => undefined
   private failReady: (error: Error) => void = () => undefined
@@ -274,10 +282,12 @@ export class AlmaTunnel {
       // The frames of one request have to be read in the order they came in:
       // the frame that ends the request must not overtake the one that
       // carries the body, or the answer comes back empty.
-      this.incoming = this.incoming.then(
-        () => this.receive(event.data),
-        () => this.receive(event.data),
-      )
+      this.incoming = this.incoming
+        .then(
+          () => this.receive(event.data),
+          () => this.receive(event.data),
+        )
+        .catch(() => this.close())
     })
     socket.addEventListener("error", () => {
       if (this.socket !== socket) return
@@ -293,6 +303,7 @@ export class AlmaTunnel {
         pending.reject(new Error(message))
       }
       this.pending.clear()
+      this.closeStreams(new Error(message))
     })
 
     const timeout = setTimeout(() => {
@@ -348,11 +359,49 @@ export class AlmaTunnel {
     }
   }
 
+  async openStream(
+    path: string,
+    onMessage: (data: Bytes) => void,
+    onClose: () => void = () => undefined,
+  ): Promise<() => void> {
+    await this.ready
+    if (this.socket?.readyState !== WebSocket.OPEN) throw new Error("the relay is disconnected")
+    const id = `w${++this.counter}`
+    const opened = new Promise<void>((resolve, reject) => {
+      this.streams.set(id, { opened: resolve, fail: reject, message: onMessage, closed: onClose })
+    })
+    const stop = (): void => {
+      if (!this.streams.delete(id)) return
+      void this.sendFrame({ t: "wclose", id }).catch(() => undefined)
+    }
+    try {
+      await withTimeout(
+        Promise.all([this.sendFrame({ t: "wopen", id, path }), opened]),
+        10000,
+        "the desktop stream timed out",
+      )
+      return stop
+    } catch (error) {
+      stop()
+      throw error
+    }
+  }
+
+  private closeStreams(error: Error): void {
+    const streams = [...this.streams.values()]
+    this.streams.clear()
+    for (const stream of streams) {
+      stream.fail(error)
+      stream.closed()
+    }
+  }
+
   close(): void {
     const error = new Error("the relay connection was closed")
     this.failReady(error)
     for (const pending of this.pending.values()) pending.reject(error)
     this.pending.clear()
+    this.closeStreams(error)
     this.closeSocket()
   }
 
@@ -427,6 +476,7 @@ export class AlmaTunnel {
       plain = await crypto.open(key, bytes.subarray(0, 12), bytes.subarray(12))
     } catch {
       this.failReady(new Error("the encrypted frame could not be opened"))
+      this.close()
       return
     }
     this.handleFrame(decodeAlmaFrame(plain))
@@ -461,6 +511,19 @@ export class AlmaTunnel {
 
   private handleFrame(frame: Record<string, unknown>): void {
     const id = String(frame.id ?? "")
+    const stream = this.streams.get(id)
+    if (stream !== undefined) {
+      if (frame.t === "wopened") stream.opened()
+      else if (frame.t === "wmsg") {
+        const data = typeof frame.s === "string" ? utf8(frame.s) : frame.b
+        if (data instanceof Uint8Array) stream.message(new Uint8Array(data))
+      } else if (frame.t === "werr" || frame.t === "wclose") {
+        this.streams.delete(id)
+        stream.fail(new Error(String(frame.message ?? "the desktop stream closed")))
+        stream.closed()
+      }
+      return
+    }
     const pending = this.pending.get(id)
     if (pending === undefined) {
       return

@@ -130,7 +130,7 @@ tag = c2s / s2c / confirm-r / confirm-i
 
 应用层使用 `hreq` → `hres` → `hchunk` → `hend`，错误帧为 `herr`。接收端必须按到达顺序解密和处理，不能让结束帧先于正文完成。RPC 请求发往 `/api/herdr/rpc`，正文为 `{method, params}`，必须带 `content-type: application/json`。
 
-桌面端只允许白名单方法及部分 `list` / `get` 方法。本客户端通过它读取会话和终端、输入、在已有工作区中新建 Agent 标签及管理 agent；`pane.focus` 被拒，客户端不依赖它切换读写目标。该模式没有事件推送。
+桌面端只允许白名单方法及部分 `list` / `get` 方法。本客户端通过它读取会话和终端、输入、在已有工作区中新建 Agent 标签及管理 agent；`pane.focus` 被拒，客户端不依赖它切换读写目标。新版状态从 `/ws/herdr` 接收 `herdr` 在线状态与完整 `snapshot`，不启用 delta；使用 `wopen`、`wopened`、`wmsg`、`wclose`、`werr` 子流。关闭子流不能关闭承载 HTTP 的共享隧道。首次通过 `/api/herdr/info` 探测，只有 404/405 才回退到旧版三列表 RPC；授权失败或临时错误不能伪装成旧版。RPC 的 HTTP 200 也可能携带 `error`，必须检查正文。终端输出仍通过 `pane.read` 获取。
 
 ## 连接与加密实现
 
