@@ -226,7 +226,12 @@ export class CoreClient {
     return terminal
   }
 
-  private async attach(address: string, terminal: Json, observe: boolean, history = 0): Promise<number> {
+  private async attach(
+    address: string,
+    terminal: Json,
+    observe: boolean,
+    history = 0,
+  ): Promise<{ channel: number; terminal: Json }> {
     const result = await this.transport.request("terminal.attach", {
       terminal: address,
       cols: Number(terminal.cols) || 80,
@@ -235,12 +240,12 @@ export class CoreClient {
       observe,
     })
     if (typeof result.channel !== "number" || result.channel <= 0) throw new Error("Core attach returned no stream")
-    return result.channel
+    return { channel: result.channel, terminal: { ...terminal, ...record(result.terminal) } }
   }
 
   private async input(address: string, bytes: string, keys?: string[]): Promise<Json> {
     const terminal = await this.terminal(address)
-    const channel = await this.attach(address, terminal, false)
+    const { channel } = await this.attach(address, terminal, false)
     try {
       if (keys) {
         const paint = (await this.transport.paint(channel, 0)).text
@@ -331,6 +336,32 @@ export class CoreClient {
     }
     const command = [kind, ...(params.args as string[])].map(quote).join(" ")
     await this.input(address, `${command}\r`)
+    // A successful write only queues a shell command. Confirm the target agent,
+    // not an unrelated prompt hook, and never repeat an uncertain launch.
+    const deadline = Date.now() + Math.min(this.options.timeoutMs ?? 5000, 5000)
+    for (;;) {
+      const current = await this.transport.request("terminal.get", { terminal: address })
+      const foreground = record(current.foreground)
+      const names = [foreground.name, ...(Array.isArray(foreground.argv) ? foreground.argv : []).slice(0, 2)]
+      const packageName = kind === "claude" ? "claude-code" : kind === "pi" ? "pi-coding-agent" : "codex"
+      const matches = names.some((value) => {
+        const name = text(value)
+        return (
+          basename(name).replace(/\.[cm]?js$/, "") === kind ||
+          (/(?:^|\/)cli\.[cm]?js$/.test(name) && name.split("/").includes(packageName!))
+        )
+      })
+      if (current.state === "live" && foreground.pid && matches) {
+        this.terminals.set(address, current)
+        break
+      }
+      if (current.state !== "live" || Date.now() >= deadline)
+        throw new HerdrRequestError(
+          "start_unknown",
+          "Agent startup could not be confirmed; inspect the terminal before retrying",
+        )
+      await new Promise((resolve) => setTimeout(resolve, 50))
+    }
     if (text(params.name))
       await this.transport.request("terminal.label", { terminal: address, labels: { [nameKey]: text(params.name) } })
     this.emit("__connected", {})
@@ -356,17 +387,17 @@ export class CoreClient {
         const terminal = await this.terminal(address)
         const lines = Math.max(0, Math.floor(Number(params.lines) || 0))
         if (params.format === "ansi" && terminal.state === "live") {
-          const channel = await this.attach(address, terminal, true, lines)
+          const { channel, terminal: screen } = await this.attach(address, terminal, true, lines)
           try {
             const paint = await this.transport.paint(channel)
             return {
               read: {
                 text: paint.text,
                 vt: true,
-                cols: Number(terminal.cols) || 80,
-                rows: Number(terminal.rows) || 24,
+                cols: Number(screen.cols) || 80,
+                rows: Number(screen.rows) || 24,
                 revision: this.revisions.get(address) ?? 0,
-                truncated: paint.truncated || terminal.screen === "inexact",
+                truncated: paint.truncated || screen.screen === "inexact",
               },
             }
           } finally {
