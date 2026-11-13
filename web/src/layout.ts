@@ -165,6 +165,10 @@ function isRule(cells: Cell[]): boolean {
   return (point >= 0x2500 && point <= 0x257f) || RULE_CHARS.has(mark)
 }
 
+function startsProse(value: string): boolean {
+  return CJK.test(value[0] ?? "") || NO_START.test(value) || /^[A-Za-z0-9]/u.test(value)
+}
+
 function continuesProse(previous: Row | null, row: Row): boolean {
   if (previous === null || previous.structured || row.structured || previous.fence || row.fence) return false
   if (previous.indent !== row.indent || previous.hanging !== previous.indent || row.hanging !== row.indent) return false
@@ -174,8 +178,9 @@ function continuesProse(previous: Row | null, row: Row): boolean {
   // sentence ending, or structured content remains a paragraph boundary.
   return (
     previous.cells.length >= 40 &&
-    CJK.test(left[0] ?? "") &&
-    (CJK.test(right[0] ?? "") || NO_START.test(right)) &&
+    startsProse(left) &&
+    startsProse(right) &&
+    CJK.test(left) &&
     CJK.test(right) &&
     !/[。！？.!?]$/u.test(left)
   )

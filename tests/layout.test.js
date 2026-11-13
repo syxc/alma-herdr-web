@@ -252,6 +252,26 @@ test("CJK prose reflow keeps source cells and does not join code or separate par
   assert.ok(lines(laid).includes("  // 这是下一行独立的代码注释"))
 })
 
+test("hard-wrapped mixed CJK prose joins Latin and punctuation starts", () => {
+  for (const [first, second, separator] of [
+    [
+      "  这段中文介绍跨设备正文排版以及可用空间的组织方式，其中英文术语 responsive",
+      "  layout 会跟随页面宽度重新组织内容。",
+      " ",
+    ],
+    ["  layout 会跟随页面宽度重新组织中文正文，保持自然的阅读顺序与连续内容", "  并让读者继续阅读当前段落。", ""],
+    ["  ，中文续行可能从原终端折行后的标点开始，这仍然属于同一段连续正文", "  后面的内容应接着填满可用宽度。", ""],
+  ]) {
+    const joined = first + separator + second.trimStart()
+    for (const width of [39, 53, 100]) {
+      assert.deepEqual(
+        lines(layoutGrid(wideScreen([first, second]), width)),
+        lines(layoutGrid(wideScreen([joined]), width)),
+      )
+    }
+  }
+})
+
 test("mixed CJK prose fills the line instead of breaking after a short English prefix", () => {
   const laid = layoutGrid(wideScreen(["Use 中文说明应该尽量填满可用宽度，不应该在短英文后提前换行。"]), 24)
   assert.ok(lines(laid)[0].startsWith("Use 中文说明"))
