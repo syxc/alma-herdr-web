@@ -45,7 +45,7 @@ function readMode(): FitMode {
   } catch {
     // The choice then lives only as long as the page.
   }
-  return window.matchMedia("(max-width: 760px)").matches ? "wrap" : "original"
+  return "wrap"
 }
 
 export class DetailScreen {

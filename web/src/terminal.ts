@@ -2,6 +2,7 @@ import { type Cell, type Grid, parseAnsi } from "./ansi.js"
 import { IconFontLoader } from "./icon-font.js"
 import { layoutGrid } from "./layout.js"
 import { paintTerminal } from "./terminal-painter.js"
+import { type ScrollDirection, terminalScroll } from "./terminal-scroll.js"
 import { TerminalSelection } from "./terminal-selection.js"
 import { TERMINAL_COLORS, type Theme } from "./terminal-theme.js"
 import { TerminalKernel } from "./vt.js"
@@ -59,7 +60,7 @@ export class TerminalView {
   private layoutWidth = -1
   private layoutCols = 0
 
-  constructor(canvas: HTMLCanvasElement) {
+  constructor(canvas: HTMLCanvasElement, onBoundary?: (direction: ScrollDirection) => void) {
     this.canvas = canvas
     const context = canvas.getContext("2d")
     if (context === null) {
@@ -98,6 +99,17 @@ export class TerminalView {
         : null
     if (this.host !== null) {
       this.host.addEventListener("scroll", () => this.handleScroll())
+      terminalScroll(
+        this.host,
+        () => this.selection?.active() ?? false,
+        (direction) => {
+          if (direction < 0) {
+            this.follow = false
+            this.captureAnchor()
+          }
+          onBoundary?.(direction)
+        },
+      )
     }
     if (this.host !== null && typeof ResizeObserver !== "undefined") {
       this.observer = new ResizeObserver(() => this.resize())

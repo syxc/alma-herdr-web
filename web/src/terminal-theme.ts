@@ -6,7 +6,7 @@ export interface TerminalColors {
   palette: readonly string[]
 }
 
-// Alma 4.3 Android's built-in schemes. Coloured RGB highlights stay untouched.
+// Alma 4.3 Android's built-in schemes; low-contrast text adapts on neutral surfaces.
 export const TERMINAL_COLORS: Record<Theme, TerminalColors> = {
   light: {
     foreground: "#1a1a1a",
@@ -83,8 +83,33 @@ function contrast(first: string, second: string): number {
   return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)
 }
 
+function blend(first: string, second: string, amount: number): string {
+  const a = channels(first) ?? [0, 0, 0]
+  const b = channels(second) ?? [0, 0, 0]
+  return `#${a
+    .map((value, index) =>
+      Math.round(value * amount + (b[index] ?? 0) * (1 - amount))
+        .toString(16)
+        .padStart(2, "0"),
+    )
+    .join("")}`
+}
+
+function readable(foreground: string, background: string): string {
+  if (contrast(foreground, background) >= 4.5) return foreground
+  const target = contrast("#000000", background) > contrast("#ffffff", background) ? "#000000" : "#ffffff"
+  let low = 0
+  let high = 1
+  for (let step = 0; step < 12; step += 1) {
+    const amount = (low + high) / 2
+    if (contrast(blend(foreground, target, amount), background) >= 4.5) low = amount
+    else high = amount
+  }
+  return blend(foreground, target, low)
+}
+
 export function cellColors(
-  style: { fg: string; bg: string; reverse: boolean },
+  style: { fg: string; bg: string; reverse: boolean; dim?: boolean },
   theme: Theme,
 ): { foreground: string; background: string } {
   const defaults = TERMINAL_COLORS[theme]
@@ -106,6 +131,17 @@ export function cellColors(
     const candidate = level < 64 || level > 192 ? defaults.foreground : tones.muted
     if (contrast(candidate, surface) > contrast(foreground, surface)) foreground = candidate
   }
-  // Apply inverse after adaptation so selection and cursor polarity stay intact.
-  return style.reverse ? { foreground: surface, background: foreground } : { foreground, background }
+  // Apply inverse before contrast adjustment so cursor polarity stays intact.
+  const colors = style.reverse ? { foreground: surface, background: foreground } : { foreground, background }
+  const actualBackground = colors.background || defaults.background
+  if (style.dim) colors.foreground = blend(colors.foreground, actualBackground, 0.6)
+  if (
+    !colorOnBlack &&
+    (actualBackground === defaults.background ||
+      actualBackground === tones.surface ||
+      neutral(actualBackground) !== null)
+  ) {
+    colors.foreground = readable(colors.foreground, actualBackground)
+  }
+  return colors
 }

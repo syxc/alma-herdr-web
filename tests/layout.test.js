@@ -220,6 +220,38 @@ test("Chinese Claude paragraphs retain their marker and hanging indent", () => {
   )
 })
 
+test("hard-wrapped CJK prose expands to the page width and retains paragraph boundaries", () => {
+  const first = "  这是命令行按原来窄窗口排出的连续中文正文，需要在更宽的页面中重新排版"
+  const second = "  、保留标点和颜色，并且让正文使用页面的实际可用宽度。"
+  const grid = wideScreen([first, second, "", "  这是另一个独立段落。", "  下一句完整陈述不会合并。"])
+  const laid = layoutGrid(grid, 90)
+  const output = lines(laid)
+  assert.ok(laid.cells[0].length >= 82, "the first line uses the wider page")
+  assert.ok(output.every((line) => !/^\s*[，。！？、；：）】》]/u.test(line)))
+  assert.equal(output.slice(0, 2).join("").replaceAll(" ", ""), (first + second).replaceAll(" ", ""))
+  assert.deepEqual(output.slice(2), ["", "  这是另一个独立段落。", "  下一句完整陈述不会合并。"])
+})
+
+test("CJK prose reflow keeps source cells and does not join code or separate paragraphs", () => {
+  const grid = wideScreen([
+    "  这是一行足够长的中文正文，用于验证真实终端的续行与样式会保留",
+    "  这里继续同一个段落。",
+    "",
+    "  const value = { enabled: true };",
+    "  独立的中文说明。",
+    "  // 这是足够长的中文代码注释，需要保留代码的原始行边界而不能当正文续行",
+    "  // 这是下一行独立的代码注释",
+  ])
+  grid.cells[1][2].style.fg = "#c678dd"
+  const styled = grid.cells[1][2]
+  const laid = layoutGrid(grid, 90)
+  assert.ok(laid.cells.some((row) => row.includes(styled)))
+  assert.ok(lines(laid).includes("  const value = { enabled: true };"))
+  assert.ok(lines(laid).includes("  独立的中文说明。"))
+  assert.ok(lines(laid).includes("  // 这是足够长的中文代码注释，需要保留代码的原始行边界而不能当正文续行"))
+  assert.ok(lines(laid).includes("  // 这是下一行独立的代码注释"))
+})
+
 test("mixed CJK prose fills the line instead of breaking after a short English prefix", () => {
   const laid = layoutGrid(wideScreen(["Use 中文说明应该尽量填满可用宽度，不应该在短英文后提前换行。"]), 24)
   assert.ok(lines(laid)[0].startsWith("Use 中文说明"))

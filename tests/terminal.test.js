@@ -122,7 +122,7 @@ test("unchanged snapshots draw nothing, while resize still repaints existing con
   assert.ok(operations.some((op) => op.kind === "text"))
 })
 
-test("themes recolour indexed cells and defaults but preserve explicit RGB", async (t) => {
+test("themes recolour indexed cells and defaults but preserve readable explicit RGB", async (t) => {
   const { view, operations } = environment(t)
   await ready(view)
   await view.setContent("D\x1b[31mR\x1b[38;2;12;34;56mT", 5)
@@ -131,18 +131,18 @@ test("themes recolour indexed cells and defaults but preserve explicit RGB", asy
   const text = operations.filter((op) => op.kind === "text")
   assert.deepEqual(
     text.map((op) => op.color),
-    ["#1a1a1a", "#e45649", "#0c2238"],
+    ["#1a1a1a", "#cb4c41", "#0c2238"],
   )
   assert.equal(operations[0].color, "#ffffff")
   operations.length = 0
   await view.setTheme("dark")
   assert.deepEqual(
     operations.filter((op) => op.kind === "text").map((op) => op.color),
-    ["#dcdfe4", "#e06c75", "#0c2238"],
+    ["#dcdfe4", "#e17078", "#89949e"],
   )
 })
 
-test("fixed neutral snapshot colours follow the page while accent colours stay intact", async (t) => {
+test("fixed neutral snapshot colours follow the page while accents retain readable hues", async (t) => {
   const { view, operations } = environment(t)
   await ready(view)
   view.setMode("original")
@@ -152,14 +152,14 @@ test("fixed neutral snapshot colours follow the page while accent colours stay i
   assert.equal(operations.find((op) => op.kind === "rect" && op.height === 21).color, "#2d313a")
   assert.deepEqual(
     operations.filter((op) => op.kind === "text").map((op) => op.color),
-    ["#dcdfe4", "#9da2ae", "#d77757"],
+    ["#dcdfe4", "#9da2ae", "#d77959"],
   )
   operations.length = 0
   await view.setTheme("light")
   assert.equal(operations.find((op) => op.kind === "rect" && op.height === 21).color, "#f0f0f0")
   assert.deepEqual(
     operations.filter((op) => op.kind === "text").map((op) => op.color),
-    ["#000000", "#666666", "#d77757"],
+    ["#000000", "#666666", "#b06147"],
   )
   operations.length = 0
   await view.setContent("\x1b[48;2;32;32;32m\x1b[38;2;240;240;240mD\x1b[0m", 5)

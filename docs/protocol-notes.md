@@ -14,7 +14,7 @@
 
 订阅类型使用点号，如 `workspace.created`；收到的事件名使用下划线，如 `workspace_created`。`pane.agent_status_changed` 和 `pane.scroll_changed` 等订阅必须带 `pane_id`。订阅集合改变时重建长连接，并按当前面板补充对应订阅。
 
-虽然事件表包含 `pane_output_changed`，该版本没有对应订阅类型。终端通过轮询 `pane.read` 更新。返回文本是带 SGR 样式的屏幕快照，读取结果位于 `result.read`；`lines` 不大于零时应省略，Alma 桌面端收到 `lines: 0` 会返回空内容。
+虽然事件表包含 `pane_output_changed`，该版本没有对应订阅类型。终端通过轮询 `pane.read` 更新。Web 使用 `source: "recent_unwrapped"` 获取带 SGR 样式的未折行内容；本机 herdr 0.9.5 的实际 schema 与读取已核对。`recent` 的屏宽折行会膨胀空白行、拆断分隔线，不能直接作为页面重排的输入。TUI 的 `lines` 单次上限为 1000；pi 自管历史需要应用翻页，不能把 `truncated: false` 等同于整段会话都已读取。`pane.send_keys` 不支持 PageUp/PageDown 名称，使用 `pane.send_text` 传递对应 VT 序列。读取结果位于 `result.read`；`lines` 不大于零时应省略，Alma 桌面端收到 `lines: 0` 会返回空内容。
 
 ## herdr-core
 

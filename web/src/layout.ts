@@ -165,17 +165,35 @@ function isRule(cells: Cell[]): boolean {
   return (point >= 0x2500 && point <= 0x257f) || RULE_CHARS.has(mark)
 }
 
+function continuesProse(previous: Row | null, row: Row): boolean {
+  if (previous === null || previous.structured || row.structured || previous.fence || row.fence) return false
+  if (previous.indent !== row.indent || previous.hanging !== previous.indent || row.hanging !== row.indent) return false
+  const left = text(previous.cells).trim()
+  const right = text(row.cells).trimStart()
+  // Long CJK prose is also hard-wrapped by CLI renderers. A blank row, a
+  // sentence ending, or structured content remains a paragraph boundary.
+  return (
+    previous.cells.length >= 40 &&
+    CJK.test(left[0] ?? "") &&
+    (CJK.test(right[0] ?? "") || NO_START.test(right)) &&
+    CJK.test(right) &&
+    !/[。！？.!?]$/u.test(left)
+  )
+}
+
 /** Reflow recognised prose continuations; snapshots do not carry soft-wrap flags. */
 export function layoutGrid(grid: Grid, width: number): Grid {
-  if (width <= 0 || grid.cols <= width) return grid
+  if (width <= 0) return grid
   width = Math.max(1, Math.floor(width))
   const rows = grid.cells.map((cells) => prepare(cells, width))
+  if (grid.cols <= width && !rows.some((row, index) => continuesProse(rows[index - 1] ?? null, row))) return grid
   const out: Cell[][] = []
   let current: Cell[] = []
   let hanging = 0
   let base = 0
   let joins = false
   let fence = ""
+  let previous: Row | null = null
   const flush = (): void => {
     if (current.length === 0) return
     out.push(...wrap(current, width, hanging, base))
@@ -186,6 +204,7 @@ export function layoutGrid(grid: Grid, width: number): Grid {
       flush()
       out.push([])
       joins = false
+      previous = null
       continue
     }
     if (row.fence || fence || row.structured) {
@@ -196,9 +215,13 @@ export function layoutGrid(grid: Grid, width: number): Grid {
         else if (row.fence[0] === fence[0] && row.fence.length >= fence.length) fence = ""
       }
       joins = false
+      previous = null
       continue
     }
-    const continues = joins && row.indent > base && row.indent === hanging && row.hanging === row.indent
+    const continues =
+      (joins && row.indent > base && row.indent === hanging && row.hanging === row.indent) ||
+      continuesProse(previous, row)
+    previous = row
     if (continues) {
       const rest = row.cells.slice(row.indent)
       const left = current[previousGlyph(current, current.length)]?.ch ?? ""

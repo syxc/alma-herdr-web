@@ -40,7 +40,7 @@ export function paintTerminal(
   const last = Math.min(rows, Math.ceil((scrollTop + rect.height) / (cellHeight * scale)))
   const colorCache = new Map<string, ReturnType<typeof cellColors>>()
   const colorsFor = (style: Cell["style"]) => {
-    const key = `${style.fg};${style.bg};${style.reverse}`
+    const key = `${style.fg};${style.bg};${style.reverse};${style.dim}`
     let colors = colorCache.get(key)
     if (colors === undefined) {
       colors = cellColors(style, theme)
@@ -80,7 +80,7 @@ export function paintTerminal(
       const style = cell.style
       const foreground = colorsFor(style).foreground
       if (cell.ch.length === 0) continue
-      ctx.globalAlpha = style.dim ? 0.6 : 1
+      ctx.globalAlpha = 1
       ctx.fillStyle = foreground
       const nextFont = `${(style.bold ? "bold " : "") + (style.italic ? "italic " : "") + fontSize}px ${fontFamily}`
       if (font !== nextFont) {

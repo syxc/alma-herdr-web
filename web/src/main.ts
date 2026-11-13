@@ -32,6 +32,7 @@ import { restartAgent as runRestart } from "./restart.js"
 import { type ScannerHandle, startScanner } from "./scanner.js"
 import { renderSessionList } from "./session-list.js"
 import { type FitMode, TerminalView } from "./terminal.js"
+import { type ScrollDirection, TerminalHistory } from "./terminal-scroll.js"
 import { renderWorkspaceTree } from "./workspace-tree.js"
 
 function el<T extends HTMLElement>(id: string): T {
@@ -92,7 +93,8 @@ let authRequired = false
 let currentScreen: "login" | "list" | "detail" = "login"
 let stateRefreshNeeded = false
 
-const terminal = new TerminalView(terminalCanvas)
+const terminal = new TerminalView(terminalCanvas, (direction) => void scrollHistory(direction))
+const terminalHistories = new Map<string, TerminalHistory>()
 initAppearance((theme) => void terminal.setTheme(theme))
 appendAppearanceControl(loginNote.parentElement ?? loginScreen)
 
@@ -340,6 +342,30 @@ function terminalVisible(): boolean {
   return currentScreen === "detail" && document.visibilityState !== "hidden"
 }
 
+function selectedHistory(paneId: string): TerminalHistory {
+  const key = `${connectionGeneration}:${paneId}`
+  let history = terminalHistories.get(key)
+  if (history === undefined) {
+    history = new TerminalHistory()
+    terminalHistories.set(key, history)
+  }
+  return history
+}
+
+async function scrollHistory(direction: ScrollDirection): Promise<void> {
+  const pane = selectedPane()
+  if (!terminalVisible() || pane === null) return
+  const generation = connectionGeneration
+  try {
+    const changed = await selectedHistory(pane.pane_id).move(direction, pane.agent, (text) =>
+      sendText(pane.pane_id, text),
+    )
+    if (changed && generation === connectionGeneration && selectedPaneId === pane.pane_id) await refreshTerminal()
+  } catch (error) {
+    setStatus((error as Error).message, true)
+  }
+}
+
 async function refreshTerminal(): Promise<void> {
   if (!terminalVisible()) return
   const pane = selectedPane()
@@ -350,10 +376,12 @@ async function refreshTerminal(): Promise<void> {
   pendingTerminal = pending
   const generation = connectionGeneration
   try {
-    // The read carries the screen of the pane and the lines above it, so
-    // a reader can scroll back into the history.
-    const read = await readPane(pane.pane_id, "recent", "ansi", 120)
+    // Read logical lines so source-side wrapping does not add blank rows or
+    // split separators before the view applies its own width.
+    const history = selectedHistory(pane.pane_id)
+    const read = await readPane(pane.pane_id, "recent_unwrapped", "ansi", history.lines)
     if (read === null) throw new Error("the desktop did not return its screen")
+    history.truncated = read.truncated
     if (generation === connectionGeneration && pane.pane_id === selectedPaneId && terminalVisible()) {
       await terminal.setContent(read.text, read.vt ? (read.rows ?? pane.viewport_rows) : pane.viewport_rows, read.cols)
     }
