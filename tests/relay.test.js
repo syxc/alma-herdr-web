@@ -67,7 +67,7 @@ async function startStack() {
   const agent = new RelayAgent({ host: "127.0.0.1", port: localPort }, hexToBytes(code))
   agent.connect(relay.url, token)
   await waitFor(() => relay.framesOfKind("register").length === 1, "the agent to register")
-  return { local, localPort, relay, agent, code, token, connections }
+  return { local, localPort, localWss, relay, agent, code, token, connections }
 }
 
 test("forwarding keeps application headers and removes hop and body-encoding headers", () => {
@@ -239,9 +239,13 @@ test("closing the event stream keeps the tunnel open for requests", async () => 
     // The page opens the event stream again whenever the backend changes.
     // That must not take the requests down with it.
     const closeFirst = await tunnel.openStream("/api/events", () => undefined)
+    await waitFor(() => stack.localWss.clients.size === 1, "the first local event stream")
     closeFirst()
+    await waitFor(() => stack.localWss.clients.size === 0, "the first local event stream to close")
     const closeSecond = await tunnel.openStream("/api/events", () => undefined)
+    await waitFor(() => stack.localWss.clients.size === 1, "the second local event stream")
     closeSecond()
+    await waitFor(() => stack.localWss.clients.size === 0, "the second local event stream to close")
 
     const after = await tunnel.request("GET", "/api/state")
     assert.equal(after.status, 200)

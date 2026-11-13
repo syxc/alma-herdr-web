@@ -25,13 +25,16 @@ export function renderWorkspaceTree(container: HTMLElement, options: TreeOptions
     button.setAttribute("aria-label", button.title)
     const copy = doc.createElement("span")
     copy.className = "tree-copy"
-    const type = doc.createElement("span")
-    type.className = "tree-kind"
-    type.textContent = kind
+    if (kind !== "Pane") {
+      const type = doc.createElement("span")
+      type.className = "tree-kind"
+      type.textContent = kind
+      copy.append(type)
+    }
     const name = doc.createElement("span")
     name.className = "label"
     name.textContent = label
-    copy.append(type, name)
+    copy.append(name)
     const dot = doc.createElement("span")
     dot.className = `dot ${statusClass(status)}`
     dot.setAttribute("aria-hidden", "true")

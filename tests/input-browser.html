@@ -256,7 +256,7 @@
     }
     await check("Preset edit chips update the input and remote keys together", async (f) => {
       const ui = toolbar(f)
-      ui.choose("Ctrl+W", "⌫", "Enter")
+      ui.choose("Ctrl+W", "Enter")
       f.input.type("one two")
       ui.button("Ctrl+W").click()
       equal([f.field.value, f.field.selectionStart], ["one ", 4])
@@ -272,13 +272,14 @@
     })
     await check("Ctrl is used once and then releases", async (f) => {
       const ui = toolbar(f)
-      ui.choose("Ctrl")
       f.input.type("abcd")
       ui.button("Ctrl").click()
       equal(ui.button("Ctrl").getAttribute("aria-pressed"), "true")
+      equal(ui.mode.textContent, "Ctrl")
       equal(press(f.field, "a").defaultPrevented, true)
       equal(f.field.selectionStart, 0)
       equal(ui.button("Ctrl").getAttribute("aria-pressed"), "false")
+      equal(ui.mode.textContent, "")
       f.input.type("X")
       await settle()
       equal(f.sent, [
@@ -289,7 +290,7 @@
     })
     await check("Modifier chips keep combined arrow modifiers", async (f) => {
       const ui = toolbar(f)
-      ui.choose("Ctrl", "Alt", "Shift", "←")
+      ui.choose("Alt", "Shift")
       f.input.type("one two")
       for (const label of ["Ctrl", "Alt", "Shift"]) ui.button(label).click()
       ui.button("←").click()
@@ -362,7 +363,6 @@
     })
     await check("The bottom Enter action releases pending modifiers", async (f) => {
       const ui = toolbar(f)
-      ui.choose("Ctrl")
       ui.button("Ctrl").click()
       ui.keys.submit()
       equal(ui.button("Ctrl").getAttribute("aria-pressed"), "false")
@@ -376,7 +376,7 @@
     })
     await check("Shift transforms punctuation in the shortcut and virtual keyboard", async (f) => {
       const ui = toolbar(f)
-      ui.choose("Shift", String.fromCharCode(96))
+      ui.choose("Shift")
       ui.button("Shift").click()
       ui.button(String.fromCharCode(96)).click()
       ui.button("Shift").click()
@@ -389,7 +389,7 @@
       const ui = toolbar(f)
       equal(
         [...ui.row.querySelectorAll("button")].map((item) => item.textContent),
-        ["Tab", "Esc", "Paste", "Shift+Tab", "↑", "↓", "Ctrl+C"],
+        ["Ctrl", "Esc", "`", "Ctrl+C", "Shift+Tab", "Tab", "↑", "↓", "←", "→", "⌫", "Paste"],
       )
       equal(ui.button("+").parentElement === ui.row.parentElement, true)
       equal(ui.row.contains(ui.button("+")), false)
@@ -413,17 +413,35 @@
       await settle()
       equal(f.sent, [["keys", ["shift+tab"]]])
     })
+    await check("Alma defaults stay unique after restoring older extras and send the expected actions", async (f) => {
+      localStorage.setItem(
+        "alma-herdr-web:extra-keys",
+        JSON.stringify(["ctrl", "left", "right", "backtick", "backspace", "ctrl+a"]),
+      )
+      const ui = toolbar(f, true)
+      for (const label of ["Ctrl", "←", "→", "⌫", String.fromCharCode(96)]) {
+        equal([...ui.row.querySelectorAll("button")].filter((item) => item.textContent === label).length, 1)
+      }
+      equal(Boolean(ui.button("Ctrl+A")), true)
+      ui.button(String.fromCharCode(96)).click()
+      for (const label of ["Esc", "Ctrl+C", "Shift+Tab", "Tab", "↑", "↓", "←", "→", "⌫"]) ui.button(label).click()
+      await settle()
+      equal(f.sent, [
+        ["text", String.fromCharCode(96)],
+        ["keys", ["esc", "ctrl+c", "shift+tab", "tab", "up", "down", "left", "right", "backspace"]],
+      ])
+    })
     await check("Optional keys persist and removing a modifier releases its state", async (f) => {
       const ui = toolbar(f)
-      ui.choose("Ctrl+A", "Ctrl")
-      ui.button("Ctrl").click()
-      const control = [...ui.menu.querySelectorAll("input")].find((item) => item.value === "ctrl")
+      ui.choose("Ctrl+A", "Shift")
+      ui.button("Shift").click()
+      const control = [...ui.menu.querySelectorAll("input")].find((item) => item.value === "shift")
       control.click()
       equal(ui.mode.textContent, "")
-      equal(ui.button("Ctrl"), undefined)
+      equal(ui.button("Shift"), undefined)
       const restored = toolbar(fixture(), true)
       equal(Boolean(restored.button("Ctrl+A")), true)
-      equal(restored.button("Ctrl"), undefined)
+      equal(restored.button("Shift"), undefined)
     })
     if (savedExtras === null) localStorage.removeItem("alma-herdr-web:extra-keys")
     else localStorage.setItem("alma-herdr-web:extra-keys", savedExtras)

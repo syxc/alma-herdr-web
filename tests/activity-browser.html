@@ -52,6 +52,7 @@ try {
   }
   Object.defineProperty(doc, "visibilityState", { configurable: true, get: () => visibility })
   doc.querySelector("#pair-input").value = pairing
+  doc.querySelector("#pair-input").dispatchEvent(new Event("input"))
   doc.querySelector("#pair-apply").click()
   await until(
     () =>
@@ -59,7 +60,15 @@ try {
       doc.querySelector("#remote-banner").classList.contains("hidden"),
   )
   check(doc.querySelector("#statusbar").textContent === "", "Connected state leaves no duplicate footer message")
+  check(
+    doc.querySelector("#sidebar #remote-panel") === null,
+    "Paired desktop navigation has no local relay setup panel",
+  )
   doc.querySelector("#list-more").click()
+  check(
+    !doc.querySelector("#list-menu").textContent.includes("Share this desktop"),
+    "Static paired clients do not offer local desktop sharing",
+  )
   check(
     doc.querySelector("#list-menu .connection-info").textContent.includes("Encrypted session"),
     "List menu keeps connection details available",

@@ -19,6 +19,7 @@ function fixture() {
     pane_id: "new-pane",
     tab_id: "new-tab",
     workspace_id: "w2",
+    cwd: "/project",
     agent: "claude",
     agent_session: { agent: "claude" },
   }
@@ -52,11 +53,11 @@ for (const agent of NEW_TAB_AGENTS) {
   })
 }
 
-test("an empty workspace uses the desktop default directory", async () => {
+test("an empty workspace explicitly requests the desktop home directory", async () => {
   const { state, log, calls } = fixture()
   state.tabs = []
   await createAgentTerminal(state, "w2", NEW_TAB_AGENTS[0], calls)
-  assert.deepEqual(log[0], ["create", "w2", null])
+  assert.deepEqual(log[0], ["create", "w2", "~"])
 })
 
 test("creation refusal does not start an agent", async () => {
@@ -201,4 +202,55 @@ test("state transport failure reports partial creation without starting another 
   const result = await createAgentTerminal(state, "w2", NEW_TAB_AGENTS[0], calls)
   assert.match(result.error, /tab was created.*state could not be read/)
   assert.equal(log.length, 1)
+})
+
+test("inherits the first available pane directory across tabs of the target workspace", async () => {
+  const { state, calls, log } = fixture()
+  state.panes.find((pane) => pane.pane_id === "source").cwd = ""
+  state.tabs.push({ tab_id: "t3", workspace_id: "w2" })
+  state.panes.push({ pane_id: "later", tab_id: "t3", cwd: "/project" })
+  await createAgentTerminal(state, "w2", NEW_TAB_AGENTS[0], calls)
+  assert.deepEqual(log[0], ["create", "w2", "/project"])
+})
+
+test("inherits a later split pane cwd instead of falling back to home", async () => {
+  const { state, calls, log } = fixture()
+  state.panes.find((pane) => pane.pane_id === "source").cwd = null
+  state.panes.push({ pane_id: "split", tab_id: "t2", cwd: "/project" })
+  await createAgentTerminal(state, "w2", NEW_TAB_AGENTS[0], calls)
+  assert.deepEqual(log[0], ["create", "w2", "/project"])
+})
+
+test("a desktop directory fallback is reported without starting the agent", async () => {
+  const { state, next, calls, log } = fixture()
+  next.panes.at(-1).cwd = "/desktop-home"
+  const result = await createAgentTerminal(state, "w2", NEW_TAB_AGENTS[0], calls)
+  assert.equal(result.paneId, "new-pane")
+  assert.match(result.error, /Working directory.*fallback directory; agent was not started/)
+  assert.deepEqual(log, [["create", "w2", "/project"]])
+})
+
+test("waits for a new pane directory before starting the agent", async () => {
+  const { state, next, calls, log } = fixture()
+  let reads = 0
+  calls.state = async () => ({
+    connected: true,
+    state: {
+      ...next,
+      panes: next.panes.map((pane) => (pane.pane_id === "new-pane" && reads++ === 0 ? { ...pane, cwd: null } : pane)),
+    },
+  })
+  const result = await createAgentTerminal(state, "w2", NEW_TAB_AGENTS[0], calls)
+  assert.equal(result.error, null)
+  assert.equal(reads, 2)
+  assert.equal(log.filter((call) => call[0] === "start").length, 1)
+})
+
+test("a missing directory never starts an agent and preserves the created pane", async () => {
+  const { state, next, calls, log } = fixture()
+  next.panes.at(-1).cwd = null
+  const result = await createAgentTerminal(state, "w2", NEW_TAB_AGENTS[0], calls)
+  assert.equal(result.paneId, "new-pane")
+  assert.match(result.error, /working directory could not be confirmed; agent was not started/)
+  assert.deepEqual(log, [["create", "w2", "/project"]])
 })

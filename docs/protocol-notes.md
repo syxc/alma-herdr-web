@@ -20,31 +20,35 @@
 
 Node agent 将以下接口映射为 herdr 请求。未列出的路径返回错误。
 
-| 方法 | 路径                     | 参数或行为                                     |
-| ---- | ------------------------ | ---------------------------------------------- |
-| GET  | `/api/state`             | 会话快照与连接状态                             |
-| GET  | `/api/pane/read`         | `pane`、`source`、`format`、`lines`            |
-| POST | `/api/pane/text`         | `pane.send_text {pane_id, text}`               |
-| POST | `/api/pane/keys`         | `pane.send_keys {pane_id, keys}`               |
-| POST | `/api/pane/focus`        | `pane.focus {pane_id}`                         |
-| POST | `/api/agent/start`       | `agent.start {pane_id, name, kind, args}`      |
-| POST | `/api/agent/prompt`      | `agent.prompt {target, text}`                  |
-| POST | `/api/workspace/create`  | `workspace.create {cwd, label, focus}`         |
-| POST | `/api/tab/create`        | `tab.create {workspace_id, cwd, label, focus}` |
-| POST | `/api/workspace/move`    | `workspace.move {workspace_id, insert_index}`  |
-| POST | `/api/tab/move`          | `tab.move {tab_id, insert_index}`              |
-| POST | `/api/workspace/focus`   | `workspace.focus {workspace_id}`               |
-| POST | `/api/tab/focus`         | `tab.focus {tab_id}`                           |
-| WS   | `/api/events`            | `state`、`pane_output` 事件                    |
-| GET  | `/api/relay/status`      | relay 状态与配对链接                           |
-| POST | `/api/relay/connect`     | `relayUrl`、可选 `relayKey`                    |
-| POST | `/api/relay/disconnect`  | 断开注册连接                                   |
-| POST | `/api/relay/rotate`      | 更换连接码                                     |
-| GET  | `/api/relay/pairing`     | 配对载荷，仅回环地址可用                       |
-| GET  | `/api/relay/pairing.svg` | 二维码，可选 `target=lan`，仅回环地址可用      |
-| GET  | `/api/auth`              | 是否需要登录                                   |
-| POST | `/api/login`             | `password`，登录成功后设置会话 cookie          |
-| POST | `/api/logout`            | 作废会话并清除 cookie                          |
+| 方法 | 路径                     | 参数或行为                                            |
+| ---- | ------------------------ | ----------------------------------------------------- |
+| GET  | `/api/state`             | 会话快照与连接状态                                    |
+| GET  | `/api/pane/read`         | `pane`、`source`、`format`、`lines`                   |
+| POST | `/api/pane/text`         | `pane.send_text {pane_id, text}`                      |
+| POST | `/api/pane/keys`         | `pane.send_keys {pane_id, keys}`                      |
+| POST | `/api/pane/focus`        | `pane.focus {pane_id}`                                |
+| POST | `/api/agent/start`       | `agent.start {pane_id, name, kind, args}`             |
+| POST | `/api/agent/prompt`      | `agent.prompt {target, text}`                         |
+| POST | `/api/workspace/create`  | `workspace.create {cwd, label, focus}`                |
+| POST | `/api/tab/create`        | `tab.create {workspace_id, cwd, label, focus}`        |
+| POST | `/api/workspace/move`    | `workspace.move {workspace_id, insert_index}`         |
+| POST | `/api/tab/move`          | `tab.move {tab_id, insert_index}`                     |
+| POST | `/api/workspace/focus`   | `workspace.focus {workspace_id}`                      |
+| POST | `/api/tab/focus`         | `tab.focus {tab_id}`                                  |
+| WS   | `/api/events`            | `state`、`pane_output` 事件                           |
+| GET  | `/api/relay/status`      | relay 状态与配对链接                                  |
+| POST | `/api/relay/connect`     | `relayUrl`、可选 `relayKey`                           |
+| POST | `/api/relay/disconnect`  | 断开注册连接                                          |
+| POST | `/api/relay/rotate`      | 更换连接码                                            |
+| GET  | `/api/relay/pairing`     | 配对载荷，仅回环地址可用                              |
+| GET  | `/api/relay/pairing.svg` | 二维码，可选 `target=lan`，仅回环地址可用             |
+| GET  | `/api/auth`              | `required` 为口令要求，`authenticated` 为当前会话状态 |
+| POST | `/api/login`             | `password`，登录成功后设置会话 cookie                 |
+| POST | `/api/logout`            | 作废会话并清除 cookie                                 |
+
+New Tab 显式以 `cwd: "~"` 请求电脑端用户主目录；继承目录时发送桌面快照中的实际路径。本机 agent 创建前校验目录，避免 herdr 0.9.5 对不可访问目录静默回退。Alma 直连由客户端核对创建后面板目录，不在回退目录中启动 Agent。
+
+上述列表说明传输层兼容接口，不表示 Web 界面提供全部管理入口。`workspace.create` 保留在本机 agent 的接口映射中；Web 界面只提供已有工作区中的 New Tab，工作区创建在电脑端完成。
 
 设置口令后，常规 API 与事件 WebSocket 要求有效会话，`/api/auth`、`/api/login` 和静态资源除外。二维码 SVG 单独限制请求来源为回环地址。relay 状态接口包含配对链接，也应按凭据处理。
 
@@ -95,7 +99,7 @@ relay 负责路由桌面端与浏览器之间的 HTTP 和 WebSocket 流量。协
 {"t":"e2e","c":"<sealed application frame>"}
 ```
 
-握手后，`req` / `res` 承载 HTTP 请求响应，`wsopen` / `wsopened` / `wsmsg` / `wsclose` 承载事件子流。请求与事件共用加密通道，但关闭事件订阅只能结束子流。通道关闭时必须拒绝所有挂起请求。
+握手后，`req` / `res` 承载 HTTP 请求响应，`wsopen` / `wsopened` / `wsmsg` / `wsclose` 承载事件子流。请求与事件共用加密通道，但关闭事件订阅只能结束子流。关闭帧使用 `wsclose`，桌面端同时兼容旧 `wscancel`。Web 客户端串行加密发送与解密回调，保证帧顺序和 nonce 计数器一致；通道或加密出错时立即关闭并拒绝所有挂起请求。
 
 ## Alma 桌面端的 E2E
 
@@ -126,7 +130,7 @@ tag = c2s / s2c / confirm-r / confirm-i
 
 应用层使用 `hreq` → `hres` → `hchunk` → `hend`，错误帧为 `herr`。接收端必须按到达顺序解密和处理，不能让结束帧先于正文完成。RPC 请求发往 `/api/herdr/rpc`，正文为 `{method, params}`，必须带 `content-type: application/json`。
 
-桌面端只允许白名单方法及部分 `list` / `get` 方法。本客户端通过它读取会话和终端、输入、创建工作区与标签及管理 agent；`pane.focus` 被拒，客户端不依赖它切换读写目标。该模式没有事件推送。
+桌面端只允许白名单方法及部分 `list` / `get` 方法。本客户端通过它读取会话和终端、输入、在已有工作区中新建 Agent 标签及管理 agent；`pane.focus` 被拒，客户端不依赖它切换读写目标。该模式没有事件推送。
 
 ## 连接与加密实现
 

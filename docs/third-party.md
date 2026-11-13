@@ -12,6 +12,10 @@
 
 `scripts/copy-vendor.mjs` 只复制实际使用的 noble 模块、jsQR 和许可证。这些复制产物不入库，可通过安装依赖和构建恢复。字体与 Ghostty WASM 是仓库内的固定资源。
 
+## 品牌图标
+
+列表顶栏的 herdr 公羊图形取自 [herdr 官网 SVG](https://herdr.dev/live/icons/ram.svg)，内联在 `web/index.html` 中；保留原始轮廓与 viewBox，将填色改为 `currentColor` 并沿用官网右侧、下侧渐隐遮罩，以适配明暗主题和小尺寸展示。图形用于标识所连接的 herdr 产品，相关品牌权利归原权利人。
+
 ## 图标字体
 
 `web/vendor/nerd-fonts/` 固定使用上游 commit `c009b09b14e1de914a552a488b9d9306e0661c1a`。原件 `symbols-nerd-font-mono.woff2` 用于生成与核对，不进入 Workers 上传目录。

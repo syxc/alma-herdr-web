@@ -178,6 +178,7 @@ function inputFixture(t) {
   const sent = []
   const screen = Object.create(DetailScreen.prototype)
   Object.assign(screen, {
+    actions: {},
     pane: { pane_id: "A", agent_status: "idle" },
     inputPaneId: "A",
     keyToolbar: { reset() {}, setEnabled() {} },
@@ -333,9 +334,12 @@ test("history keys keep modifiers and leave browser shortcuts alone", (t) => {
 
 test("switching panes sends pending text and keys to their original pane", (t) => {
   const f = inputFixture(t)
+  const cleared = []
+  f.screen.actions.clearSelection = () => cleared.push(f.screen.pane.pane_id)
   f.input.type("pending")
   f.input.sendSpecial(["left"])
   f.screen.update({ tabs: [], workspaces: [] }, { pane_id: "B", agent_status: "idle" })
+  assert.deepEqual(cleared, ["A"], "the previous pane selection is cleared before changing the input target")
   assert.equal(f.field.value, "")
   f.input.type("next")
   f.tick()

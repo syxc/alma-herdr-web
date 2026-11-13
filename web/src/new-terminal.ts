@@ -34,11 +34,18 @@ export async function createAgentTerminal(
   if (!snapshot.workspaces.some((workspace) => workspace.workspace_id === workspaceId)) {
     return failed("the workspace is no longer available")
   }
-  const tab = snapshot.tabs.find((candidate) => candidate.workspace_id === workspaceId)
-  const source = tab === undefined ? undefined : snapshot.panes.find((pane) => pane.tab_id === tab.tab_id)
-  const created = await calls.create(workspaceId, source?.cwd ?? null)
+  let cwd = "~"
+  for (const tab of snapshot.tabs.filter((candidate) => candidate.workspace_id === workspaceId)) {
+    const source = snapshot.panes.find((pane) => pane.tab_id === tab.tab_id && pane.cwd?.trim())
+    if (source?.cwd) {
+      cwd = source.cwd
+      break
+    }
+  }
+  const created = await calls.create(workspaceId, cwd)
   if (created.error !== null || created.paneId === null) return failed(created.error ?? "no pane was returned")
   const paneId = created.paneId
+  let createdState: SessionSnapshot | null = null
   // The create reply can arrive before the pane is visible in session state.
   for (let round = 0; round < 40; round += 1) {
     if (!calls.current()) return failed("connection changed")
@@ -52,6 +59,20 @@ export async function createAgentTerminal(
     if (!next.connected || next.state === null) return failed("the tab was created, but the desktop disconnected")
     const pane = next.state.panes.find((candidate) => candidate.pane_id === paneId)
     if (pane !== undefined) {
+      createdState = next.state
+      // Alma can accept an unavailable cwd and create a shell in its home instead.
+      // Snapshot cwd values are desktop-resolved paths; never start in a fallback.
+      if (cwd !== "~" && !pane.cwd) {
+        if (round < 39) await calls.pause(100)
+        continue
+      }
+      if (cwd !== "~" && pane.cwd !== cwd) {
+        return {
+          paneId,
+          state: next.state,
+          error: `Working directory is not accessible or changed: ${cwd}. The desktop opened a fallback directory; agent was not started.`,
+        }
+      }
       const name = agentName({ ...pane, agent: agent.kind, agent_session: null })
       let error: string | null = null
       try {
@@ -69,6 +90,13 @@ export async function createAgentTerminal(
       return { paneId, state: next.state, error }
     }
     if (round < 39) await calls.pause(100)
+  }
+  if (createdState !== null) {
+    return {
+      paneId,
+      state: createdState,
+      error: "Tab created, but its working directory could not be confirmed; agent was not started.",
+    }
   }
   return failed("the tab was created, but its pane did not appear; refresh the list before trying again")
 }

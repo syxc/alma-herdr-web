@@ -82,7 +82,10 @@ export class RemoteTunnel {
         }
       },
       onAppFrame: (frame) => this.handleFrame(frame),
-      onError: (message) => this.failReady(new Error(message)),
+      onError: (message) => {
+        this.failReady(new Error(message))
+        this.close()
+      },
       onReady: () => this.markReady(),
     })
 

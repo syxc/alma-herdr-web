@@ -27,31 +27,31 @@ const SHIFTED: Record<string, string> = {
 }
 const EXTRA_KEY = "alma-herdr-web:extra-keys"
 const BASE_KEYS: [string, string, string][] = [
-  ["Tab", "tab", "Complete or indent"],
+  ["Ctrl", "ctrl", "Modify the next key"],
   ["Esc", "esc", "Cancel or leave the current mode"],
-  ["Paste", "paste", "Paste from clipboard"],
+  ["`", "backtick", "Insert backtick"],
+  ["Ctrl+C", "ctrl+c", "Interrupt"],
   ["Shift+Tab", "shift+tab", "Previous completion or application mode"],
+  ["Tab", "tab", "Complete or indent"],
   ["↑", "up", "Previous command"],
   ["↓", "down", "Next command"],
-  ["Ctrl+C", "ctrl+c", "Interrupt"],
+  ["←", "left", "Move left"],
+  ["→", "right", "Move right"],
+  ["⌫", "backspace", "Backspace"],
+  ["Paste", "paste", "Paste from clipboard"],
 ]
 const EXTRA_KEYS: [string, string, string][] = [
   ["Ctrl+W", "ctrl+w", "Delete previous word"],
   ["Ctrl+U", "ctrl+u", "Delete to line start"],
   ["Ctrl+A", "ctrl+a", "Line start"],
   ["Ctrl+E", "ctrl+e", "Line end"],
-  ["←", "left", "Move left"],
-  ["→", "right", "Move right"],
   ["Ctrl+R", "ctrl+r", "Search history"],
   ["Ctrl+K", "ctrl+k", "Delete to line end"],
   ["Ctrl+L", "ctrl+l", "Clear screen"],
   ["Ctrl+D", "ctrl+d", "EOF / exit"],
-  ["`", "backtick", "Insert backtick"],
   ["Shift", "shift", "Modify the next key"],
-  ["Ctrl", "ctrl", "Modify the next key"],
   ["Alt", "alt", "Modify the next key"],
   ["Enter", "enter", "Also available beside the input"],
-  ["⌫", "backspace", "Backspace"],
 ]
 
 export class KeyToolbar {
@@ -163,6 +163,7 @@ export class KeyToolbar {
     this.modifierButtons.clear()
     for (const [label, key, hint] of BASE_KEYS) {
       if (key === "paste") this.button(label, () => void this.paste(), hint)
+      else if (key === "ctrl") this.addModifier(key, label)
       else this.addKey(label, key, hint)
     }
     for (const [label, key, hint] of EXTRA_KEYS) {

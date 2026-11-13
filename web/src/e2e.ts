@@ -283,6 +283,8 @@ export class E2EClientSession {
   private recvCounter = 0
   private started = false
   private privateKey: unknown = null
+  private outgoing: Promise<void> = Promise.resolve()
+  private incoming: Promise<void> = Promise.resolve()
 
   constructor(options: E2EClientOptions) {
     this.psk = options.psk
@@ -320,7 +322,13 @@ export class E2EClientSession {
     this.send(JSON.stringify({ t: "e2e-hello", n: base64(nonce), c: base64(toBytes(cipher)) }))
   }
 
-  async receive(text: string): Promise<void> {
+  receive(text: string): Promise<void> {
+    // WebCrypto completion order must not reorder frames or their callbacks.
+    this.incoming = this.incoming.then(() => this.receiveNext(text))
+    return this.incoming
+  }
+
+  private async receiveNext(text: string): Promise<void> {
     let frame: Record<string, unknown>
     try {
       frame = JSON.parse(text) as Record<string, unknown>
@@ -341,7 +349,13 @@ export class E2EClientSession {
     }
   }
 
-  async sendApp(frame: Record<string, unknown>): Promise<void> {
+  sendApp(frame: Record<string, unknown>): Promise<void> {
+    // The peer derives each nonce from wire order, so encryption runs in order too.
+    this.outgoing = this.outgoing.then(() => this.sendNext(frame))
+    return this.outgoing
+  }
+
+  private async sendNext(frame: Record<string, unknown>): Promise<void> {
     const key = this.sendKey
     if (key === null) {
       return

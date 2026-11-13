@@ -1,0 +1,274 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Desktop access checks</title>
+<style>
+body {
+  font: 15px system-ui;
+  margin: 20px;
+}
+iframe {
+  width: 390px;
+  height: 560px;
+  border: 1px solid #aaa;
+}
+pre {
+  white-space: pre-wrap;
+  line-height: 1.6;
+}
+</style>
+<h1>Desktop access checks</h1>
+<p>Isolated local API and encrypted mock desktop. No real pairing data.</p>
+<pre id="result">Running…</pre>
+<script type="module">
+const mode = "__MODE__"
+const pairing = "__PAIRING__"
+const result = document.querySelector("#result")
+const lines = []
+const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+const post = (path) => fetch(path, { method: "POST" })
+const stats = async () => (await fetch("/check/stats")).json()
+const frame = document.createElement("iframe")
+frame.title = "Test app"
+let doc
+const el = (id) => doc.getElementById(id)
+const visible = (id) => el(id) && !el(id).classList.contains("hidden")
+function check(value, message) {
+  if (!value) throw new Error(message)
+  lines.push(`PASS ${message}`)
+  result.textContent = lines.join("\n")
+}
+async function until(predicate) {
+  const deadline = Date.now() + 15000
+  while (!(await predicate())) {
+    if (Date.now() >= deadline) throw new Error(`Timed out: ${lines.at(-1)}`)
+    await pause(40)
+  }
+}
+async function loaded() {
+  await until(() => frame.contentDocument?.getElementById("app") && frame.contentDocument !== doc)
+  doc = frame.contentDocument
+}
+async function ready() {
+  await until(() => !visible("screen-startup") && !visible("screen-login") && visible("app"))
+}
+function menuItem(label) {
+  if (!visible("list-menu")) el("list-more").click()
+  return [...el("list-menu").querySelectorAll("button")].find(
+    (item) => item.querySelector(".popover-label")?.textContent === label,
+  )
+}
+async function unlock() {
+  el("login-password").value = "test-only-passphrase"
+  el("login-submit").click()
+  await ready()
+  await until(() => doc.querySelector(".session-row"))
+}
+try {
+  const initialLogouts = (await stats()).logouts
+  sessionStorage.removeItem("alma-herdr-web:pairing")
+  localStorage.removeItem("alma-herdr-web:selection")
+  const source = new DOMParser().parseFromString(await (await fetch("/")).text(), "text/html")
+  check(
+    source.querySelector("#screen-login").classList.contains("hidden"),
+    "Initial HTML never shows the passphrase form",
+  )
+  frame.src = "/"
+  document.body.insertBefore(frame, result)
+  await loaded()
+  if (mode === "protected") {
+    await until(() => visible("screen-login"))
+    check(!visible("app"), "Protected local agent waits for its access passphrase")
+    check((await fetch("/api/state")).status === 401, "Local API refuses an unauthenticated browser")
+    el("login-password").value = "wrong"
+    el("login-submit").click()
+    await until(() => el("login-note").classList.contains("error"))
+    check(visible("screen-login") && !visible("app"), "Wrong passphrase keeps terminals locked")
+    await unlock()
+    check(true, "Correct passphrase opens local terminals")
+  } else {
+    await ready()
+    check(!visible("screen-login"), `${mode}: no passphrase form`)
+    const title = doc.querySelector("#screen-list .app-bar-center").getBoundingClientRect()
+    const more = el("list-more").getBoundingClientRect()
+    check(
+      Math.abs(title.left - (visible("list-back") ? el("list-back").getBoundingClientRect().right + 10 : 19)) < 0.5 &&
+        title.right <= more.left,
+      `${mode}: title aligns left and leaves room for the actions`,
+    )
+  }
+  if (mode === "static") {
+    await until(() => visible("pair-panel"))
+    check(visible("pair-scan"), "Static site opens directly to the pairing options")
+    check(!menuItem("Sign out"), "Static site has no sign-out entry")
+    check(!visible("list-back") && !visible("remote-banner"), "Unpaired start has no redundant back control or banner")
+    check(
+      el("list-heading").textContent === "alma herdr" && el("pair-title").textContent === "Connect to your herdr",
+      "Unpaired start names herdr as the connection target",
+    )
+    check(
+      el("pair-apply").disabled && doc.activeElement !== el("pair-input"),
+      "Empty start avoids a dead connect action and automatic keyboard",
+    )
+    if (visible("list-menu")) el("list-more").click()
+    for (const theme of ["light", "dark"]) {
+      doc.documentElement.dataset.theme = theme
+      for (const width of [320, 390, 1024]) {
+        frame.style.width = `${width}px`
+        await pause(40)
+        const bounds = el("pair-panel").getBoundingClientRect()
+        const more = el("list-more").getBoundingClientRect()
+        const actions = el("list-more").parentElement.getBoundingClientRect()
+        const logo = doc.querySelector("#screen-list .mark").getBoundingClientRect()
+        check(
+          Math.abs(more.right - (width - 19)) < 0.5 && actions.width === more.width && logo.width === 24,
+          `${theme} ${width}px: logo stays visible and the only header action aligns right`,
+        )
+        check(
+          ["pair-scan", "pair-apply"].every((id) =>
+            ["top", "right", "bottom", "left"].every(
+              (edge) => frame.contentWindow.getComputedStyle(el(id), "::before")[edge] === "0px",
+            ),
+          ),
+          `${theme} ${width}px: pairing button surfaces align with the input edges`,
+        )
+        check(
+          doc.documentElement.scrollWidth <= width && bounds.width <= 464,
+          `${theme} ${width}px: pairing stays within the viewport`,
+        )
+        const scanStyle = frame.contentWindow.getComputedStyle(el("pair-scan"), "::before")
+        const connectStyle = frame.contentWindow.getComputedStyle(el("pair-apply"), "::before")
+        check(
+          scanStyle.backgroundColor === connectStyle.backgroundColor &&
+            scanStyle.borderColor === connectStyle.borderColor &&
+            el("pair-scan").getBoundingClientRect().height === el("pair-apply").getBoundingClientRect().height,
+          `${theme} ${width}px: link and scan actions have equal visual weight`,
+        )
+        check(
+          el("pair-scan").getBoundingClientRect().height >= 44 &&
+            el("pair-apply").getBoundingClientRect().height >= 44 &&
+            el("pair-input").getBoundingClientRect().width >= 140,
+          `${theme} ${width}px: scan and link controls remain usable`,
+        )
+      }
+    }
+    frame.style.width = "390px"
+    frame.style.height = "320px"
+    await pause(40)
+    el("screen-list").scrollTop = el("screen-list").scrollHeight
+    const lastAction = el("pair-scan").getBoundingClientRect()
+    check(lastAction.top >= 0 && lastAction.bottom <= 320, "Short view can scroll to the final connection action")
+    frame.style.height = "560px"
+    el("screen-list").scrollTop = 0
+    el("pair-input").value = "https://example.invalid/"
+    el("pair-input").dispatchEvent(new Event("input"))
+    el("pair-form").requestSubmit()
+    check(
+      visible("pair-note") && el("pair-input").getAttribute("aria-invalid") === "true",
+      "Invalid pairing link has an inline error",
+    )
+    const media = frame.contentWindow.navigator.mediaDevices
+    Object.defineProperty(media, "getUserMedia", {
+      configurable: true,
+      value: () => Promise.reject(new DOMException("Camera denied", "NotAllowedError")),
+    })
+    el("pair-scan").click()
+    await until(() => el("scan-status").classList.contains("error"))
+    check(
+      visible("scan-panel") && !visible("scan-video") && el("scan-status").textContent.includes("paste a pairing link"),
+      "Denied camera offers the link fallback without an empty video",
+    )
+    el("scan-stop").click()
+    check(!visible("scan-panel"), "Scanner can close without leaving pairing")
+    el("pair-input").value = pairing
+    el("pair-input").dispatchEvent(new Event("input"))
+    check(
+      !visible("pair-note") && !el("pair-input").hasAttribute("aria-invalid"),
+      "Editing clears the old pairing error",
+    )
+    el("pair-form").requestSubmit()
+    check(el("pair-apply").disabled && el("pair-scan").disabled, "Connecting prevents duplicate actions")
+    await until(() => el("connection").classList.contains("online") && !visible("remote-banner"))
+    check(doc.querySelector(".session-row"), "Pairing still opens encrypted remote terminals")
+    check(
+      el("list-heading").textContent === "Terminals" && !el("screen-list").classList.contains("pairing-home"),
+      "Connected state restores the terminal list layout",
+    )
+    frame.contentWindow.location.reload()
+    await loaded()
+    await ready()
+    await until(() => el("connection").classList.contains("online"))
+    check(true, "Reload restores the saved encrypted pairing without login")
+    menuItem("Forget paired herdr").click()
+    await until(() => visible("pair-panel"))
+    check(sessionStorage.getItem("alma-herdr-web:pairing") === null, "Forget disconnects and removes the saved pairing")
+    check(
+      el("screen-list").classList.contains("pairing-home") && !visible("list-back") && !visible("remote-banner"),
+      "Forget returns to the clean connection welcome",
+    )
+  } else {
+    await until(() => doc.querySelector(".session-row"))
+    check(
+      Boolean(menuItem("Sign out")) === (mode === "protected"),
+      `${mode}: sign-out visibility follows configured passphrase`,
+    )
+    check(visible("list-back") === (mode === "protected"), `${mode}: back exit only exists with a passphrase`)
+    if (visible("list-menu")) el("list-more").click()
+    doc.querySelector(".session-row").click()
+    await until(() => doc.querySelector(".terminal-text")?.textContent.includes("auth-check terminal output"))
+    check(true, `${mode}: opening a terminal still reads its output`)
+    await until(async () => (await stats()).connections > 0)
+    check(true, `${mode}: local event WebSocket connects`)
+    el("detail-back").click()
+    frame.contentWindow.location.reload()
+    await loaded()
+    await ready()
+    await until(() => doc.querySelector(".session-row"))
+    check(true, `${mode}: reload keeps desktop access`)
+    if (mode === "protected") {
+      await post("/check/expire")
+      doc.dispatchEvent(new Event("visibilitychange"))
+      await until(() => visible("screen-login"))
+      await pause(100)
+      check(!visible("app"), "Expired session stays locked after the failed state request completes")
+      await unlock()
+      menuItem("Sign out").click()
+      await until(() => visible("screen-login"))
+      check((await fetch("/api/state")).status === 401, "Sign out revokes the server session")
+      await until(async () => (await stats()).connections === 0)
+      check(true, "Sign out closes the local event stream")
+      await unlock()
+      el("list-back").click()
+      await until(() => visible("screen-login"))
+      check((await stats()).logouts === initialLogouts + 2, "Back exit also revokes desktop access")
+    } else {
+      el("list-back").click()
+      check(
+        (await stats()).logouts === 0 && !visible("screen-login"),
+        "Unprotected local mode cannot open a dummy login by going back",
+      )
+    }
+  }
+  await post("/check/fail")
+  frame.contentWindow.location.reload()
+  await loaded()
+  await until(() => visible("startup-retry"))
+  check(
+    visible("screen-startup") && !visible("screen-login") && !visible("app"),
+    "Failed access check shows retry, not a false password prompt or unlocked app",
+  )
+  await post("/check/reset")
+  el("startup-retry").click()
+  await until(() => !visible("screen-startup"))
+  check(
+    mode === "protected" ? visible("screen-login") : !visible("screen-login"),
+    "Retry restores the correct access mode",
+  )
+  result.textContent += "\n\nALL CHECKS PASSED"
+  document.title = `PASS — ${mode} desktop access checks`
+} catch (error) {
+  result.textContent += `\n\nFAIL ${error.message}`
+  document.title = `FAIL — ${mode} desktop access checks`
+} finally {
+  await post("/check/reset")
+}
+</script>

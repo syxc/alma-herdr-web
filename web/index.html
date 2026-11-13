@@ -30,24 +30,27 @@
     <link rel="stylesheet" href="style.css">
   </head>
   <body>
-    <!--
-      The sign in comes first: the client runs on a server of its own, so
-      nobody gets to the terminals without the passphrase.
-    -->
-    <section id="screen-login" class="screen-login">
+    <section id="screen-startup" class="screen-login" aria-label="Connecting">
+      <div class="login-card">
+        <p id="startup-note" role="status">Connecting…</p>
+        <button id="startup-retry" class="compact-button hidden" type="button">Retry</button>
+      </div>
+    </section>
+    <!-- Only a local agent with an access passphrase needs this form. -->
+    <section id="screen-login" class="screen-login hidden">
       <div class="login-card">
         <span class="login-mark" aria-hidden="true">◈</span>
         <h1 class="login-title">alma herdr</h1>
-        <p class="login-sub">The terminals of this desktop, on any device.</p>
+        <p class="login-sub">Enter this desktop’s access passphrase.</p>
         <form id="login-form" class="login-form" autocomplete="off">
           <input
             id="login-password"
             type="password"
-            placeholder="Passphrase"
+            placeholder="Desktop passphrase"
             autocomplete="current-password"
-            aria-label="Passphrase"
+            aria-label="Desktop passphrase"
           >
-          <button id="login-submit" class="round-fill" type="submit" aria-label="Sign in">
+          <button id="login-submit" class="round-fill" type="submit" aria-label="Unlock desktop">
             <svg
               viewBox="0 0 24 24"
               width="20"
@@ -75,47 +78,11 @@
           <span class="brand">alma herdr</span>
           <span id="connection" class="pill">connecting</span>
         </header>
-        <div class="sidebar-actions">
-          <button id="new-workspace" class="compact-button" type="button">New workspace</button>
-          <button id="new-tab" class="compact-button" type="button">New tab</button>
-        </div>
         <div id="tree" class="tree"></div>
-        <details id="remote-details" class="remote-details" open>
-          <summary>Remote access</summary>
-          <section id="remote-panel" class="remote-panel">
-            <p class="hint">Register this desktop with an Alma relay, then open the pairing link on another device.</p>
-            <div class="field">
-              <input id="relay-url" type="url" placeholder="https://relay.example.com">
-              <button id="relay-connect" class="compact-button" type="button">Connect</button>
-            </div>
-            <div class="field">
-              <input id="relay-token" type="password" placeholder="Relay token (official relay only)">
-            </div>
-            <div class="field">
-              <button id="relay-disconnect" class="compact-button" type="button">Disconnect</button>
-              <button id="relay-rotate" class="compact-button" type="button">New code</button>
-            </div>
-            <div id="relay-state" class="relay-state"></div>
-            <div id="relay-pair" class="relay-pair hidden">
-              <div class="qr">
-                <img id="relay-qr" alt="Pairing code">
-                <span id="relay-qr-label">Anywhere</span>
-                <code id="relay-link"></code>
-              </div>
-              <div class="qr" id="relay-qr-lan-box">
-                <img id="relay-qr-lan" alt="Pairing code for this network">
-                <span id="relay-qr-lan-label">On this network</span>
-                <code id="relay-link-lan"></code>
-              </div>
-              <p id="qr-note" class="qr-note hidden">
-                The pairing code is only drawn on the machine that runs the desktop.
-              </p>
-            </div>
-          </section>
-        </details>
       </aside>
       <main id="main">
         <div id="remote-banner" class="remote-banner hidden"></div>
+        <div id="new-tab-status" class="statusbar hidden" role="status" aria-live="polite"></div>
 
         <!-- The list of the terminals that are open. -->
         <section id="screen-list" class="screen">
@@ -137,7 +104,20 @@
             </button>
             <div class="app-bar-center">
               <span class="app-bar-title">
-                <span class="mark" aria-hidden="true">◈</span>Terminals
+                <svg
+                  class="mark"
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="150 140 874 884"
+                  width="24"
+                  height="24"
+                  aria-hidden="true"
+                >
+                  <path
+                    d="M2794 3710 c-129 -33 -299 -135 -359 -214 -21 -28 -26 -42 -21 -63 9 -38 154 -178 199 -192 32 -11 41 -9 104 23 171 86 354 70 475 -43 150 -138 150 -379 0 -511 -107 -95 -278 -94 -386 2 l-46 40 -11 -29 c-16 -40 -14 -122 4 -164 60 -144 264 -222 452 -174 360 92 559 494 430 868 -36 103 -81 173 -175 267 -71 72 -100 93 -180 132 -52 26 -127 54 -167 62 -96 21 -230 20 -319 -4z M2183 3695 c-116 -32 -221 -108 -273 -199 -17 -28 -30 -54 -30 -58 0 -4 20 1 45 12 66 28 220 68 294 76 64 7 65 7 137 83 40 41 71 77 69 79 -2 2 -21 8 -42 13 -55 12 -140 10 -200 -6z M2212 3388 c-159 -22 -390 -122 -559 -241 -299 -210 -585 -600 -609 -828 -12 -118 40 -251 125 -318 96 -76 178 -98 426 -116 110 -8 224 -21 254 -29 125 -34 230 -115 272 -211 11 -24 24 -81 30 -127 20 -170 65 -271 166 -374 34 -35 63 -65 63 -67 0 -1 -10 -27 -22 -57 -29 -76 -37 -259 -14 -350 42 -170 158 -318 311 -397 44 -23 98 -46 120 -52 22 -6 45 -14 51 -18 5 -5 15 -48 22 -96 6 -48 14 -92 17 -97 4 -6 415 -10 1131 -10 l1124 0 0 1584 0 1585 -55 -19 c-84 -29 -143 -68 -232 -154 l-83 -78 -54 49 c-111 102 -233 151 -391 160 -113 6 -199 -10 -298 -54 l-60 -27 -26 34 c-37 51 -120 134 -127 128 -3 -4 0 -34 7 -67 17 -89 7 -268 -21 -356 -103 -328 -377 -545 -688 -545 -161 0 -273 41 -373 137 -37 35 -66 75 -85 116 -79 173 -8 407 124 407 44 0 68 -14 117 -66 74 -78 167 -82 238 -9 60 62 72 147 33 231 -42 90 -120 130 -238 122 -50 -4 -85 -14 -131 -37 -89 -45 -122 -52 -176 -40 -92 20 -262 163 -302 253 -11 25 -21 45 -22 45 -1 -1 -30 -6 -65 -11z m-256 -505 c115 -88 129 -102 132 -131 2 -18 -2 -40 -9 -49 -7 -8 -69 -55 -138 -105 -103 -73 -130 -88 -151 -83 -35 8 -51 34 -48 74 3 31 12 42 83 92 44 31 80 61 82 66 1 4 -30 31 -69 58 -39 28 -77 56 -85 63 -18 19 -16 72 4 94 32 35 63 23 199 -79z m528 -88 c23 -24 28 -52 14 -82 l-13 -28 -141 -3 c-130 -2 -142 -1 -158 17 -23 26 -24 66 -1 91 16 18 32 20 151 20 105 0 136 -3 148 -15z"
+                    transform="translate(-80 967) scale(.22 -.22)"
+                    fill="currentColor"
+                  />
+                </svg><span id="list-heading">Terminals</span>
                 <svg
                   class="signal"
                   viewBox="0 0 24 24"
@@ -189,19 +169,88 @@
             <div id="list-menu" class="popover hidden"></div>
             <div id="new-terminal-menu" class="popover new-terminal-menu hidden"></div>
           </header>
-          <div id="new-tab-status" class="statusbar hidden" role="status" aria-live="polite"></div>
-          <div id="pair-panel" class="pair-panel hidden">
-            <input id="pair-input" type="url" placeholder="Paste a pairing link">
-            <button id="pair-scan" class="compact-button" type="button">Scan QR</button>
-            <button id="pair-apply" class="compact-button" type="button">Connect</button>
-          </div>
-          <div id="scan-panel" class="scan-panel hidden">
-            <video id="scan-video" playsinline muted></video>
-            <div class="scan-row">
-              <span id="scan-status" class="scan-status"></span>
-              <button id="scan-stop" class="compact-button" type="button">Stop</button>
+          <section id="pair-panel" class="pair-panel hidden" aria-labelledby="pair-title">
+            <div class="pair-intro">
+              <svg
+                class="pair-desktop"
+                viewBox="0 0 48 48"
+                width="48"
+                height="48"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.6"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <rect x="6" y="8" width="36" height="25" rx="3" />
+                <path d="M18 40h12M24 33v7M16 18l5 4-5 4M26 26h6" />
+              </svg>
+              <h1 id="pair-title">Connect to your herdr</h1>
+              <p>In Alma on the target machine, open Settings › Remote Access.</p>
+              <p>
+                Sign in to Alma's official relay, or deploy and use your own relay. Get the pairing link or QR code
+                there.
+              </p>
             </div>
-          </div>
+            <label class="pair-label" for="pair-input">Pairing link</label>
+            <form id="pair-form" class="pair-form" novalidate>
+              <input
+                id="pair-input"
+                type="url"
+                placeholder="Paste a pairing link"
+                aria-label="Pairing link"
+                aria-describedby="pair-note"
+                autocomplete="off"
+                autocapitalize="off"
+                spellcheck="false"
+                enterkeyhint="go"
+              >
+              <button id="pair-apply" class="compact-button" type="submit" disabled>Connect</button>
+            </form>
+            <p id="pair-note" class="pair-note hidden" role="status" aria-live="polite"></p>
+            <span class="pair-divider" aria-hidden="true">or</span>
+            <button id="pair-scan" class="compact-button" type="button">
+              <svg
+                viewBox="0 0 24 24"
+                width="20"
+                height="20"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.8"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M8 3H3v5M16 3h5v5M21 16v5h-5M8 21H3v-5" />
+                <path d="M7 7h3v3H7zM14 7h3v3h-3zM7 14h3v3H7zM14 14h3v3h-3z" />
+              </svg>
+              Scan QR code
+            </button>
+            <div id="scan-panel" class="scan-panel hidden">
+              <video id="scan-video" playsinline muted></video>
+              <div class="scan-row">
+                <span id="scan-status" class="scan-status"></span>
+                <button id="scan-stop" class="compact-button" type="button">Stop</button>
+              </div>
+            </div>
+            <p class="pair-privacy">
+              <svg
+                viewBox="0 0 24 24"
+                width="15"
+                height="15"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.6"
+                stroke-linecap="round"
+                aria-hidden="true"
+              >
+                <rect x="5" y="10" width="14" height="11" rx="2" />
+                <path d="M8 10V7a4 4 0 0 1 8 0v3" />
+              </svg>
+              End-to-end encrypted
+            </p>
+          </section>
           <div id="session-list" class="session-list"></div>
         </section>
 
@@ -367,6 +416,44 @@
       </main>
     </div>
     <div id="scrim" class="scrim hidden"></div>
+    <dialog id="desktop-sharing" class="desktop-sharing" aria-labelledby="desktop-sharing-title">
+      <header class="settings-header">
+        <h2 id="desktop-sharing-title">Share this desktop</h2>
+        <button id="desktop-sharing-close" class="settings-close" type="button" aria-label="Close desktop sharing">
+          ×
+        </button>
+      </header>
+      <section id="remote-panel" class="remote-panel">
+        <p class="hint">Register this desktop with an Alma relay, then open the pairing link on another device.</p>
+        <div class="field">
+          <input id="relay-url" type="url" placeholder="https://relay.example.com">
+          <button id="relay-connect" class="compact-button" type="button">Connect</button>
+        </div>
+        <div class="field">
+          <input id="relay-token" type="password" placeholder="Relay token (official relay only)">
+        </div>
+        <div class="field">
+          <button id="relay-disconnect" class="compact-button" type="button">Disconnect</button>
+          <button id="relay-rotate" class="compact-button" type="button">New code</button>
+        </div>
+        <div id="relay-state" class="relay-state"></div>
+        <div id="relay-pair" class="relay-pair hidden">
+          <div class="qr">
+            <img id="relay-qr" alt="Pairing code">
+            <span id="relay-qr-label">Anywhere</span>
+            <code id="relay-link"></code>
+          </div>
+          <div class="qr" id="relay-qr-lan-box">
+            <img id="relay-qr-lan" alt="Pairing code for this network">
+            <span id="relay-qr-lan-label">On this network</span>
+            <code id="relay-link-lan"></code>
+          </div>
+          <p id="qr-note" class="qr-note hidden">
+            The pairing code is only drawn on the machine that runs the desktop.
+          </p>
+        </div>
+      </section>
+    </dialog>
     <script type="module" src="dist/main.js"></script>
   </body>
 </html>

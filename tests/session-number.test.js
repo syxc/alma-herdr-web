@@ -35,6 +35,7 @@ function environment(t) {
   globalThis.document = { createElement: element }
   const view = Object.create(DetailScreen.prototype)
   Object.assign(view, {
+    actions: {},
     inputPaneId: null,
     input: { setEnabled() {}, reset() {} },
     keyToolbar: { setEnabled() {}, reset() {} },

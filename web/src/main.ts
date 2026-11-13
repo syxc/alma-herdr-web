@@ -3,9 +3,7 @@ import {
   closeRemote,
   connectEvents,
   connectRelay,
-  createTab,
   createTerminalTab,
-  createWorkspace,
   disconnectEvents,
   disconnectRelay,
   fetchRelayStatus,
@@ -45,6 +43,9 @@ function el<T extends HTMLElement>(id: string): T {
 }
 
 const app = el<HTMLDivElement>("app")
+const startupScreen = el<HTMLElement>("screen-startup")
+const startupNote = el<HTMLElement>("startup-note")
+const startupRetry = el<HTMLButtonElement>("startup-retry")
 const loginScreen = el<HTMLElement>("screen-login")
 const listScreen = el<HTMLElement>("screen-list")
 const detailScreen = el<HTMLElement>("screen-detail")
@@ -57,7 +58,6 @@ const tree = el<HTMLDivElement>("tree")
 const connectionPill = el<HTMLSpanElement>("connection")
 const statusbar = el<HTMLDivElement>("statusbar")
 const terminalCanvas = el<HTMLCanvasElement>("terminal")
-const remotePanel = el<HTMLElement>("remote-panel")
 const remoteBanner = el<HTMLElement>("remote-banner")
 const relayUrlInput = el<HTMLInputElement>("relay-url")
 const relayTokenInput = el<HTMLInputElement>("relay-token")
@@ -71,22 +71,24 @@ const relayLink = el<HTMLElement>("relay-link")
 const relayQrLan = el<HTMLImageElement>("relay-qr-lan")
 const relayLinkLan = el<HTMLElement>("relay-link-lan")
 const relayQrLanBox = el<HTMLDivElement>("relay-qr-lan-box")
-const pairPanel = el<HTMLDivElement>("pair-panel")
+const pairPanel = el<HTMLElement>("pair-panel")
 const pairInput = el<HTMLInputElement>("pair-input")
 const pairApply = el<HTMLButtonElement>("pair-apply")
 const pairScan = el<HTMLButtonElement>("pair-scan")
+const pairNote = el<HTMLParagraphElement>("pair-note")
 const scanPanel = el<HTMLDivElement>("scan-panel")
 const scanVideo = el<HTMLVideoElement>("scan-video")
 const scanStatus = el<HTMLSpanElement>("scan-status")
 const scanStop = el<HTMLButtonElement>("scan-stop")
 const sidebar = el<HTMLElement>("sidebar")
 const scrim = el<HTMLElement>("scrim")
-const remoteDetails = el<HTMLDetailsElement>("remote-details")
+const desktopSharing = el<HTMLDialogElement>("desktop-sharing")
 const qrNote = el<HTMLElement>("qr-note")
 
 let scanner: ScannerHandle | null = null
 
 let localApi = true
+let authRequired = false
 let currentScreen: "login" | "list" | "detail" = "login"
 let stateRefreshNeeded = false
 
@@ -189,9 +191,11 @@ function isPhone(): boolean {
 }
 
 function showScreen(screen: "login" | "list" | "detail"): void {
+  if (screen !== "detail") terminal.clearSelection()
   if (screen === "login" && currentScreen !== "login") connectionGeneration += 1
   if (screen !== "list") newTerminalMenu.close()
   currentScreen = screen
+  startupScreen.classList.add("hidden")
   loginScreen.classList.toggle("hidden", screen !== "login")
   app.classList.toggle("hidden", screen === "login")
   listScreen.classList.toggle("hidden", screen !== "list")
@@ -273,6 +277,7 @@ const detail = new DetailScreen({
   status: (message, isError) => setStatus(message, isError),
   setFitMode: (mode: FitMode) => terminal.setMode(mode),
   paneSize: () => terminal.size(),
+  clearSelection: () => terminal.clearSelection(),
   connectionInfo,
 })
 
@@ -361,7 +366,7 @@ async function refreshTerminal(): Promise<void> {
 
 function connectionInfo(): string {
   const status = connectionPill.textContent ?? "offline"
-  if (activePairing === null) return localApi ? `Local desktop · ${status}` : "No paired desktop"
+  if (activePairing === null) return localApi ? `Local herdr · ${status}` : "No paired herdr"
   const relay = activePairing.kind === "alma" ? activePairing.relay : activePairing.payload.relay
   return `${status} · Encrypted session via ${relay}`
 }
@@ -370,25 +375,23 @@ function renderListMenu(): void {
   listMenu.replaceChildren()
   const entries: { label: string; hint: string; run: () => void }[] = [
     {
+      label: "Share this desktop",
+      hint: "Relay and pairing settings for this local agent",
+      run: () => {
+        desktopSharing.showModal()
+        void refreshRelay()
+      },
+    },
+    {
       label: "Join a remote session",
-      hint: "Pairs this browser with another desktop",
+      hint: "Connects this browser to herdr on another machine",
       run: () => {
         pairPanel.classList.toggle("hidden")
         pairInput.focus()
       },
     },
     {
-      label: "New tab",
-      hint: "Opens another terminal in this workspace",
-      run: () => void createNewTab(),
-    },
-    {
-      label: "New workspace",
-      hint: "Opens a workspace of its own",
-      run: () => void createNewWorkspace(),
-    },
-    {
-      label: "Forget paired desktop",
+      label: "Forget paired herdr",
       hint: "Disconnects this tab and removes its saved pairing",
       run: () => {
         forgetPairing()
@@ -400,8 +403,9 @@ function renderListMenu(): void {
         pendingTerminal = null
         selectedPaneId = null
         void applyState(null, false)
-        remoteBanner.classList.remove("hidden")
-        remoteBanner.textContent = "Pair with a desktop to open its terminals."
+        remoteBanner.classList.add("hidden")
+        remoteBanner.textContent = ""
+        setPairingNote("")
         setStatus("", false)
         pairPanel.classList.remove("hidden")
         showScreen("list")
@@ -409,16 +413,18 @@ function renderListMenu(): void {
     },
     {
       label: "Sign out",
-      hint: "Ends the session of this browser",
+      hint: "Ends access to this local desktop",
       run: () => {
-        void signOut().then(() => showScreen("login"))
+        void signOutFlow()
       },
     },
   ].filter(
     (entry) =>
-      (entry.label !== "Sign out" || localApi) &&
-      (entry.label !== "Forget paired desktop" || activePairing !== null) &&
-      (!entry.label.startsWith("New ") || snapshot !== null),
+      (entry.label !== "Sign out" || (localApi && authRequired)) &&
+      (entry.label !== "Join a remote session" || localApi || activePairing !== null) &&
+      (entry.label !== "Forget paired herdr" || activePairing !== null) &&
+      (entry.label !== "Share this desktop" ||
+        (localApi && activePairing === null && !window.location.pathname.startsWith("/c/"))),
   )
   for (const entry of entries) {
     const item = document.createElement("button")
@@ -449,42 +455,6 @@ function renderListMenu(): void {
   info.textContent = connectionInfo()
   listMenu.appendChild(info)
 }
-
-async function createNewWorkspace(): Promise<void> {
-  const cwd = window.prompt("Directory for the new workspace", "/tmp")
-  if (cwd === null) {
-    return
-  }
-  const label = window.prompt("Label", "workspace") ?? "workspace"
-  const error = await createWorkspace(cwd, label)
-  if (error !== null) {
-    setStatus(`create workspace failed: ${error}`, true)
-  }
-}
-
-async function createNewTab(): Promise<void> {
-  if (snapshot === null) {
-    return
-  }
-  const workspaceId = snapshot.focused_workspace_id ?? snapshot.workspaces[0]?.workspace_id ?? ""
-  const cwd = window.prompt("Directory for the new tab", "/tmp")
-  if (cwd === null) {
-    return
-  }
-  const label = window.prompt("Label", "tab") ?? "tab"
-  const error = await createTab(workspaceId, cwd, label)
-  if (error !== null) {
-    setStatus(`create tab failed: ${error}`, true)
-  }
-}
-
-el<HTMLButtonElement>("new-workspace").addEventListener("click", () => {
-  void createNewWorkspace()
-})
-
-el<HTMLButtonElement>("new-tab").addEventListener("click", () => {
-  void createNewTab()
-})
 
 const newTerminalMenu = new NewTerminalMenu(
   el<HTMLButtonElement>("list-new"),
@@ -564,13 +534,28 @@ el<HTMLButtonElement>("list-back").addEventListener("click", () => {
     pairInput.focus()
     return
   }
-  void signOut().then(() => showScreen("login"))
+  if (authRequired) void signOutFlow()
 })
 
 loginForm.addEventListener("submit", (event) => {
   event.preventDefault()
   void signInFlow()
 })
+
+async function signOutFlow(): Promise<void> {
+  try {
+    await signOut()
+    closeRemote()
+    activePairing = null
+    reconnectNeeded = false
+    loginNote.textContent = ""
+    showScreen("login")
+  } catch (error) {
+    setStatus((error as Error).message, true)
+    remoteBanner.textContent = (error as Error).message
+    remoteBanner.classList.remove("hidden")
+  }
+}
 
 async function signInFlow(): Promise<void> {
   loginNote.classList.remove("error")
@@ -580,6 +565,7 @@ async function signInFlow(): Promise<void> {
     loginNote.classList.add("error")
     return
   }
+  authRequired = state.required
   loginPassword.value = ""
   loginNote.textContent = ""
   await start()
@@ -590,6 +576,7 @@ async function applyState(next: SessionSnapshot | null, connected: boolean): Pro
   const shapeChanged = signature !== lastSignature
   lastSignature = signature
   snapshot = next
+  updatePairingView()
   el<HTMLButtonElement>("list-new").classList.toggle("hidden", !localApi && snapshot === null)
   connectionPill.textContent = connected ? "connected" : "offline"
   connectionPill.className = `pill ${connected ? "online" : "offline"}`
@@ -645,7 +632,14 @@ function connectionFailed(error: unknown): void {
   newTerminalMenu.update()
   remoteBanner.classList.remove("hidden")
   remoteBanner.textContent = "Connection interrupted. Reconnecting automatically…"
-  if (snapshot === null) pairPanel.classList.remove("hidden")
+  if (snapshot === null) {
+    pairPanel.classList.remove("hidden")
+    remoteBanner.classList.add("hidden")
+    setPairingNote(
+      "Could not reach herdr on the target machine. Check that it is running. Retrying automatically…",
+      true,
+    )
+  }
 }
 
 async function poll(refreshStateFirst = false): Promise<void> {
@@ -671,7 +665,7 @@ async function poll(refreshStateFirst = false): Promise<void> {
 async function refreshState(): Promise<void> {
   const next = await fetchState()
   if (activePairing !== null && (!next.connected || next.state === null)) {
-    throw new Error("the desktop is unavailable")
+    throw new Error("herdr is unavailable")
   }
   await applyState(next.state, next.connected)
 }
@@ -742,20 +736,28 @@ async function applyPairing(source: string | Pairing): Promise<boolean> {
   if (pairingBusy) return false
   const pairing = typeof source === "string" ? readPairing(source) : source
   if (pairing === null) {
-    setStatus("that link carries no pairing data", true)
+    setPairingNote(
+      "This link has no pairing code. Copy the full pairing link from Alma’s Remote Access settings.",
+      true,
+    )
+    pairInput.setAttribute("aria-invalid", "true")
     return false
   }
   if (activePairing !== pairing) collapsedWorkspaces.clear()
+  desktopSharing.close()
   activePairing = pairing
+  pairInput.removeAttribute("aria-invalid")
   pairingBusy = true
+  updatePairingControls()
   newTerminalMenu.update()
   const generation = ++connectionGeneration
   pendingTerminal = null
   // The desktop the client leaves stops pushing its state.
   disconnectEvents()
-  remoteBanner.classList.remove("hidden")
-  remoteBanner.textContent = "Connecting to the desktop…"
-  setStatus("connecting to the desktop", false)
+  setPairingNote("Connecting to herdr…")
+  remoteBanner.classList.toggle("hidden", snapshot === null)
+  remoteBanner.textContent = "Connecting to herdr…"
+  setStatus("connecting to herdr", false)
   try {
     if (pairing.kind === "alma") {
       await openAlmaRemote({ relay: pairing.relay, code: pairing.code })
@@ -768,10 +770,10 @@ async function applyPairing(source: string | Pairing): Promise<boolean> {
     }
     savePairing(pairing)
     pairInput.value = ""
+    setPairingNote("")
     reconnectNeeded = false
     stopScanner()
     pairPanel.classList.add("hidden")
-    remotePanel.classList.add("hidden")
     remoteBanner.classList.remove("hidden")
     // The session of the paired desktop replaces the local one.
     selectedPaneId = null
@@ -787,12 +789,43 @@ async function applyPairing(source: string | Pairing): Promise<boolean> {
     return false
   } finally {
     pairingBusy = false
+    updatePairingControls()
     newTerminalMenu.update()
   }
 }
 
-pairApply.addEventListener("click", () => {
-  void applyPairing(pairInput.value.trim())
+function updatePairingView(): void {
+  const home = !localApi && snapshot === null
+  listScreen.classList.toggle("pairing-home", home)
+  el("list-heading").textContent = home ? "alma herdr" : "Terminals"
+  const back = el<HTMLButtonElement>("list-back")
+  back.classList.toggle("hidden", localApi ? !authRequired : snapshot === null)
+  back.setAttribute("aria-label", localApi ? "End desktop access" : "Connect to herdr on another machine")
+}
+
+function setPairingNote(message: string, error = false): void {
+  pairNote.textContent = message
+  pairNote.classList.toggle("hidden", message.length === 0)
+  pairNote.classList.toggle("error", error)
+}
+
+function updatePairingControls(): void {
+  pairApply.disabled = pairingBusy || pairInput.value.trim().length === 0
+  pairScan.disabled = pairingBusy
+  pairInput.readOnly = pairingBusy
+  pairPanel.setAttribute("aria-busy", String(pairingBusy))
+  pairApply.textContent = pairingBusy ? "Connecting…" : "Connect"
+}
+
+pairInput.addEventListener("input", () => {
+  pairInput.removeAttribute("aria-invalid")
+  setPairingNote("")
+  updatePairingControls()
+})
+
+el<HTMLFormElement>("pair-form").addEventListener("submit", (event) => {
+  event.preventDefault()
+  if (pairInput.value.trim().length > 0) void applyPairing(pairInput.value.trim())
 })
 
 async function scanPairingCode(): Promise<void> {
@@ -800,6 +833,7 @@ async function scanPairingCode(): Promise<void> {
     return
   }
   scanPanel.classList.remove("hidden")
+  scanVideo.classList.remove("hidden")
   scanStatus.textContent = "Point the camera at the pairing code"
   scanStatus.classList.remove("error")
   try {
@@ -808,7 +842,11 @@ async function scanPairingCode(): Promise<void> {
       void applyPairing(code)
     })
   } catch (error) {
-    scanStatus.textContent = (error as Error).message
+    scanVideo.classList.add("hidden")
+    scanStatus.textContent =
+      (error as Error).name === "NotAllowedError"
+        ? "Camera access was not allowed. Allow it in your browser, or paste a pairing link below."
+        : (error as Error).message
     scanStatus.classList.add("error")
   }
 }
@@ -827,11 +865,19 @@ scanStop.addEventListener("click", () => {
   stopScanner()
 })
 
+el("desktop-sharing-close").addEventListener("click", () => desktopSharing.close())
+desktopSharing.addEventListener("close", () => {
+  relayTokenInput.value = ""
+  el("list-more").focus()
+})
+
 relayConnect.addEventListener("click", () => {
   const key = relayTokenInput.value.trim()
   void connectRelay(relayUrlInput.value.trim(), key.length > 0 ? key : undefined).then((error) => {
     if (error !== null) {
-      setStatus(`relay connect failed: ${error}`, true)
+      relayState.textContent = `Could not share this desktop: ${error}`
+      relayState.classList.add("error")
+      return
     }
     void refreshRelay()
   })
@@ -851,6 +897,7 @@ scrim.addEventListener("click", () => {
 
 window.addEventListener("keydown", (event) => {
   if (event.key === "Escape") {
+    if (desktopSharing.open) return
     if (newTerminalMenu.isOpen()) {
       newTerminalMenu.close(true)
       return
@@ -871,33 +918,31 @@ window.addEventListener("resize", () => {
 async function start(): Promise<void> {
   showScreen("list")
   localApi = await hasLocalApi()
+  updatePairingView()
   if (!localApi) {
     // A hosted client pairs with a desktop; it cannot register this host.
-    remoteDetails.classList.add("hidden")
     app.classList.add("no-sidebar")
-    el<HTMLButtonElement>("list-back").setAttribute("aria-label", "Pair with another desktop")
   }
   const pairing = readPairing(window.location.hash + window.location.search) ?? readSavedPairing()
   let paired = false
   if (pairing !== null) {
     paired = await applyPairing(pairing)
   } else if (window.location.pathname.startsWith("/c/")) {
-    remotePanel.classList.add("hidden")
     remoteBanner.classList.remove("hidden")
     remoteBanner.textContent = "This page came through the relay but carries no pairing code."
-  } else if (localApi) {
-    void refreshRelay()
-  } else {
+    pairPanel.classList.remove("hidden")
+  } else if (!localApi) {
     // There is no agent next to the page, so there is no relay of its own
     // either. The desktops are reached through a pairing.
-    remoteBanner.textContent = "Pair with a desktop to open its terminals. Paste a pairing link or scan its QR code."
-    remoteBanner.classList.remove("hidden")
+    remoteBanner.textContent = ""
+    remoteBanner.classList.add("hidden")
     pairPanel.classList.remove("hidden")
   }
 
   if (!paired && activePairing === null) {
     if (localApi) {
       const initial = await fetchState()
+      if (currentScreen === "login") return
       await applyState(initial.state, initial.connected)
       connectEvents(handleEvent)
     } else {
@@ -910,11 +955,6 @@ async function start(): Promise<void> {
   await refreshTerminal()
 
   if (pollTimer === null) pollTimer = window.setInterval(() => void poll(), 1500)
-
-  if (isPhone()) {
-    // The remote access panel is long, so it starts closed on a phone.
-    remoteDetails.open = false
-  }
 }
 
 window.addEventListener("offline", () => {
@@ -936,13 +976,26 @@ document.addEventListener("visibilitychange", () => {
 })
 
 setUnauthorizedHandler(() => {
-  // The session is gone, so the reader signs in again.
-  showScreen("login")
+  disconnectEvents()
+  if (authRequired) showScreen("login")
+  else void main()
 })
+
+startupRetry.addEventListener("click", () => void main())
 
 async function main(): Promise<void> {
   const state = await authStatus()
-  if (state.required) {
+  if (state.error !== undefined) {
+    startupNote.textContent = state.error
+    startupRetry.classList.remove("hidden")
+    startupScreen.classList.remove("hidden")
+    loginScreen.classList.add("hidden")
+    app.classList.add("hidden")
+    return
+  }
+  startupRetry.classList.add("hidden")
+  authRequired = state.required
+  if (state.required && !state.authenticated) {
     loginNote.textContent = state.error ?? ""
     showScreen("login")
     return

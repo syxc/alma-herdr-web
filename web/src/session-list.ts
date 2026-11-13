@@ -76,7 +76,10 @@ export function renderSessionList(container: HTMLElement, options: SessionListOp
   if (panes.length === 0) {
     const empty = document.createElement("div")
     empty.className = "session-empty"
-    empty.textContent = "No terminal is open on this desktop yet."
+    empty.textContent =
+      snapshot.workspaces.length === 0
+        ? "Open a workspace and terminal in herdr on your computer to get started."
+        : "No terminal is open. Use + to start an agent in an existing workspace."
     container.appendChild(empty)
     return
   }

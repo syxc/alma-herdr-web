@@ -391,8 +391,6 @@ function enqueue<T>(task: () => Promise<T>): Promise<T> {
 
 async function command(method: string, path: string, params: Record<string, unknown>): Promise<ApiResult> {
   if (backend.kind === "alma") {
-    // Both create endpoints default to focus=true on the local agent.
-    if (method === "workspace.create" || method === "tab.create") params = { focus: true, ...params }
     return almaCall(backend.tunnel, method, params)
   }
   return call(path, {
@@ -440,16 +438,6 @@ export async function promptAgent(target: string, text: string): Promise<ApiFail
   return result.ok ? null : { error: result.error ?? "prompt failed", code: result.code ?? "" }
 }
 
-export async function createWorkspace(cwd: string, label: string): Promise<string | null> {
-  const result = await command("workspace.create", "/api/workspace/create", { cwd, label })
-  return result.ok ? null : (result.error ?? "create failed")
-}
-
-export async function createTab(workspaceId: string, cwd: string, label: string): Promise<string | null> {
-  const result = await command("tab.create", "/api/tab/create", { workspace_id: workspaceId, cwd, label })
-  return result.ok ? null : (result.error ?? "create failed")
-}
-
 export interface CreatedTerminal {
   paneId: string | null
   error: string | null
@@ -458,7 +446,7 @@ export interface CreatedTerminal {
 export async function createTerminalTab(workspaceId: string, cwd: string | null): Promise<CreatedTerminal> {
   const result = await command("tab.create", "/api/tab/create", {
     workspace_id: workspaceId,
-    ...(cwd ? { cwd } : {}),
+    cwd: cwd || "~",
     focus: false,
   })
   if (!result.ok) return { paneId: null, error: result.error ?? "create failed" }

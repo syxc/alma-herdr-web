@@ -42,7 +42,7 @@ export class TunnelSession {
       socket.send(Buffer.from(frame.data, "base64"))
       return
     }
-    if (kind === "wscancel") {
+    if (kind === "wsclose" || kind === "wscancel") {
       const id = String(frame.id ?? "")
       this.sockets.get(id)?.close()
       this.sockets.delete(id)

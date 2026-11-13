@@ -6,6 +6,7 @@ import { TerminalInput } from "./input.js"
 import { KeyToolbar } from "./key-toolbar.js"
 import { paneNumbers, statusClass } from "./session-list.js"
 import type { FitMode } from "./terminal.js"
+import { terminalSelection } from "./terminal-selection.js"
 
 export interface DetailCallbacks {
   pickPane(paneId: string): void
@@ -17,6 +18,7 @@ export interface DetailCallbacks {
   status(message: string, isError: boolean): void
   setFitMode(mode: FitMode): void
   paneSize(): { cols: number; rows: number }
+  clearSelection?(): void
   connectionInfo?(): string
 }
 
@@ -155,18 +157,11 @@ export class DetailScreen {
       this.keyToolbar.submit()
     })
 
-    this.canvas.addEventListener("mousedown", () => {
-      if (!isPhone()) {
-        // A desktop has a keyboard of its own, so the screen takes it.
-        this.input.focusScreen()
-      }
-    })
-    this.canvas.addEventListener("click", () => {
-      if (isPhone()) {
-        // A touch screen has no keyboard of its own, so the software keyboard
-        // goes into the field, which hands every key to the pane at once.
-        this.input.focusField()
-      }
+    el("terminal-view").addEventListener("click", () => {
+      // A drag or long press must retain native selection instead of opening the keyboard.
+      if (terminalSelection(this.canvas) !== null) return
+      if (isPhone()) this.input.focusField()
+      else this.input.focusScreen()
     })
     const detailMore = el<HTMLButtonElement>("detail-more")
     document.addEventListener("click", (event) => {
@@ -364,6 +359,7 @@ export class DetailScreen {
     this.snapshot = snapshot
     const paneId = pane?.pane_id ?? null
     if (paneId !== this.inputPaneId) {
+      this.actions.clearSelection?.()
       // Flush while the sink still points to the old pane.
       this.input.reset()
       this.keyToolbar.reset()

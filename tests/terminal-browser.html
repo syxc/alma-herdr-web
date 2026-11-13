@@ -1,9 +1,14 @@
 <!doctype html>
 <meta charset="utf-8">
 <title>Terminal browser checks</title>
+<link rel="stylesheet" href="/style.css">
 <link rel="stylesheet" href="/vendor/nerd-fonts/symbols.css">
 <link rel="stylesheet" href="/vendor/nerd-fonts/terminal-symbols/symbols.css">
 <style>
+html,
+body {
+  overflow: auto;
+}
 body {
   font: 15px system-ui;
   margin: 20px;
@@ -26,9 +31,12 @@ canvas {
 </style>
 <h1>Terminal browser checks</h1>
 <div id="host"><canvas id="terminal"></canvas></div>
+<pre id="selection-state">Drag or long-press the terminal text to select it.</pre>
 <pre id="result">Running…</pre>
 <script type="module">
+import { TerminalInput } from "/dist/input.js"
 import { TerminalView } from "/dist/terminal.js"
+import { selectTerminalText } from "/dist/terminal-selection.js"
 
 const host = document.querySelector("#host")
 const canvas = document.querySelector("#terminal")
@@ -40,6 +48,11 @@ function check(value, message) {
   if (!value) throw new Error(message)
   lines.push(`PASS ${message}`)
   result.textContent = lines.join("\n")
+}
+function nearColor(actual, expected) {
+  // Keep seam checks exact; allow small browser differences in channel readback.
+  const channels = actual.split(",").map(Number)
+  return expected.split(",").every((value, index) => Math.abs(Number(value) - channels[index]) <= 3)
 }
 function pixel(x, y) {
   return Array.from(ctx.getImageData(Math.floor(x * devicePixelRatio), Math.floor(y * devicePixelRatio), 1, 1).data)
@@ -63,12 +76,13 @@ try {
     const backgroundPixels = new Set()
     for (let x = 20; x < 300; x += 1 / devicePixelRatio) backgroundPixels.add(pixel(x, 18))
     check(
-      backgroundPixels.size === 1 && backgroundPixels.has(theme === "dark" ? "45,49,58" : "239,239,239"),
+      backgroundPixels.size === 1 &&
+        [...backgroundPixels].every((color) => nearColor(color, theme === "dark" ? "45,49,58" : "239,239,239")),
       `${theme}: continuous ANSI background has no cell seams (${backgroundPixels.size} colours)`,
     )
     await view.setContent("plain text", 10)
     check(
-      pixel(25, 18) === (theme === "dark" ? "40,44,52" : "255,255,255"),
+      nearColor(pixel(25, 18), theme === "dark" ? "40,44,52" : "255,255,255"),
       `${theme}: plain text has no message background`,
     )
     await view.setContent(`\x1b[48;2;239;239;239m${" ".repeat(50)}\x1b[0m`, 10)
@@ -78,9 +92,9 @@ try {
   const text = "\x1b[31mRed\x1b[0m 中文 \x1b[4munderline\x1b[0m \x1b[38;2;12;34;56mRGB"
   await view.setContent(text, 10)
   await pause(80)
-  check(pixel(0, 0) === "40,44,52", "Dark Canvas uses Alma Android background")
+  check(nearColor(pixel(0, 0), "40,44,52"), "Dark Canvas uses Alma Android background")
   await view.setTheme("light")
-  check(pixel(0, 0) === "255,255,255", "Static Canvas repaints immediately in Light")
+  check(nearColor(pixel(0, 0), "255,255,255"), "Static Canvas repaints immediately in Light")
   const before = paints
   const started = performance.now()
   for (let index = 0; index < 100; index += 1) await view.setContent(text, 10)
@@ -204,7 +218,7 @@ try {
   const stressStart = performance.now()
   await view.setContent(stress, 24)
   await pause(180)
-  check(pixel(1, 1) === "255,255,255", "Long snapshot retains a readable canvas backing store")
+  check(nearColor(pixel(1, 1), "255,255,255"), "Long snapshot retains a readable canvas backing store")
   const visiblePixels = ctx.getImageData(0, 0, canvas.width, canvas.height).data
   check(
     visiblePixels.some((value, index) => index % 4 !== 3 && value < 240),
@@ -229,6 +243,122 @@ try {
       (performance.now() - stressStart).toFixed(1) +
       " ms including scroll settle",
   )
+  const layer = canvas.parentElement.querySelector(".terminal-text")
+  const spans = layer.querySelectorAll("span").length
+  const glyphs = view.laidOut.reduce((total, row) => total + row.filter((cell) => cell.ch).length, 0)
+  check(spans < glyphs / 3, "Long snapshots group text runs rather than create one node per cell")
+  let mutations = 0
+  const observer = new MutationObserver((records) => {
+    mutations += records.length
+  })
+  observer.observe(layer, { childList: true, subtree: true, attributes: true })
+  for (let index = 0; index < 100; index += 1) await view.setContent(stress, 24)
+  await pause(0)
+  check(mutations === 0, "100 unchanged snapshots do not rebuild or mutate the text layer")
+  observer.disconnect()
+  lines.push(`INFO Selection text layer: ${spans} spans for ${glyphs} cells`)
+  const stableRow = layer.firstChild
+  const incrementalStart = performance.now()
+  await view.setContent(`${stress}\nappended output`, 24)
+  check(layer.firstChild === stableRow, "Appending output reuses unchanged text rows instead of rebuilding the layer")
+  lines.push(`INFO Appending output with selection layer: ${(performance.now() - incrementalStart).toFixed(1)} ms`)
+  const sample = `copy 中文 👩‍💻 e\u0301 ${"words ".repeat(18)}done\n    code:  42\nnext line`
+  for (const mode of ["wrap", "original", "shrink"]) {
+    view.setMode(mode)
+    await view.setContent(`\x1b[31m${sample}\x1b[0m`, 24)
+    selectTerminalText(canvas)
+    await pause(0)
+    const data = new DataTransfer()
+    const copy = new ClipboardEvent("copy", { clipboardData: data, cancelable: true, bubbles: true })
+    layer.dispatchEvent(copy)
+    check(
+      copy.defaultPrevented && data.getData("text/plain") === sample,
+      `${mode}: native copy retains source newlines, code spaces and Unicode without ANSI or reflow breaks`,
+    )
+    view.clearSelection()
+    await pause(0)
+    if (mode !== "original")
+      check(host.scrollWidth <= host.clientWidth, `${mode}: text selection adds no horizontal overflow`)
+  }
+  view.setMode("wrap")
+  await view.setContent(sample, 24)
+  selectTerminalText(canvas)
+  await pause(0)
+  host.style.width = "390px"
+  view.resize()
+  await view.setContent(sample, 24)
+  document.getSelection().removeAllRanges()
+  await pause(40)
+  check(
+    view.layoutWidth === host.clientWidth - 38,
+    "Clearing selection applies deferred width changes even when queued text is unchanged",
+  )
+  view.setMode("original")
+  await view.setContent("alpha 中文 👩‍💻 omega", 24)
+  const emoji = [...layer.querySelectorAll("span")].find((span) => span.textContent === "👩‍💻").firstChild
+  const partial = document.createRange()
+  partial.setStart(emoji, 1)
+  partial.setEnd(emoji, 3)
+  document.getSelection().removeAllRanges()
+  document.getSelection().addRange(partial)
+  await pause(0)
+  check(view.selection.selectedText() === "👩‍💻", "Partial DOM boundaries cannot split a joined emoji")
+  const oldNode = layer.firstChild
+  const oldRows = view.rows
+  await view.setContent("pending one", 24)
+  await view.setContent("pending latest", 24)
+  check(
+    layer.firstChild === oldNode && view.rows === oldRows,
+    "New output preserves the selected DOM and painted snapshot",
+  )
+  view.clearSelection()
+  await pause(40)
+  check(layer.textContent.includes("alpha"), "Explicit pane reset discards queued output from the old selection")
+  selectTerminalText(canvas)
+  await pause(0)
+  await view.setContent("resume latest", 24)
+  document.getSelection().removeAllRanges()
+  await pause(40)
+  check(layer.textContent.includes("resume latest"), "Clearing native selection resumes the latest queued snapshot")
+  const field = document.createElement("input")
+  document.body.append(field)
+  const sent = []
+  const input = new TerminalInput(field, canvas, {
+    sendText: (text) => sent.push(text),
+    sendKeys: (keys) => sent.push(keys),
+  })
+  input.setEnabled(true)
+  layer.focus({ preventScroll: true })
+  selectTerminalText(canvas)
+  await pause(0)
+  const copyKey = new KeyboardEvent("keydown", { key: "c", ctrlKey: true, bubbles: true, cancelable: true })
+  layer.dispatchEvent(copyKey)
+  await pause(40)
+  check(
+    !copyKey.defaultPrevented && sent.length === 0,
+    "Ctrl+C on selected output stays native and never interrupts the remote terminal",
+  )
+  const outside = document.createRange()
+  outside.setStart(layer.firstChild.firstChild.firstChild, 0)
+  outside.setEndAfter(host)
+  document.getSelection().removeAllRanges()
+  document.getSelection().addRange(outside)
+  layer.dispatchEvent(new KeyboardEvent("keydown", { key: "c", ctrlKey: true, bubbles: true, cancelable: true }))
+  await pause(40)
+  check(sent.length === 0, "Dragging a selection beyond the terminal boundary cannot send Ctrl+C remotely")
+  layer.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }))
+  await pause(40)
+  check(
+    document.getSelection().isCollapsed && sent.length === 0,
+    "Escape clears output selection without sending a remote key",
+  )
+  canvas.dispatchEvent(new KeyboardEvent("keydown", { key: "c", ctrlKey: true, bubbles: true, cancelable: true }))
+  await pause(40)
+  check(
+    JSON.stringify(sent) === JSON.stringify([["ctrl+c"]]),
+    "Ctrl+C without output selection still interrupts the remote terminal",
+  )
+  field.remove()
   host.style.width = "390px"
   host.style.height = "360px"
   view.resize()
@@ -238,6 +368,9 @@ try {
   result.textContent = lines.join("\n")
   result.textContent += "\n\nALL CHECKS PASSED"
   document.title = "PASS — Terminal browser checks"
+  document.addEventListener("selectionchange", () => {
+    document.querySelector("#selection-state").textContent = view.selection.selectedText() ?? "No terminal selection"
+  })
 } catch (error) {
   result.textContent += `\n\nFAIL ${error.message}`
   document.title = "FAIL — Terminal browser checks"

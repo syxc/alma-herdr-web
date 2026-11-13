@@ -1,15 +1,15 @@
 /**
  * The sign in of the web client.
  *
- * The client is meant to run on a cloud server, so the server can ask for a
- * passphrase before it hands out any state. The session itself lives in a
- * cookie that the browser sends on its own, so nothing secret is kept in
- * the page.
+ * Only a local agent can require an access passphrase. Static hosts use
+ * desktop pairing instead. The local session uses an HttpOnly cookie.
  */
 
 export interface AuthState {
   /** Whether the server asks for a passphrase. */
   required: boolean
+  /** Whether this browser already has a valid local session. */
+  authenticated?: boolean
   /** Why the last attempt failed. */
   error?: string
 }
@@ -23,6 +23,7 @@ export interface AuthState {
 export async function authStatus(): Promise<AuthState> {
   try {
     const response = await fetch("/api/auth", {
+      cache: "no-store",
       headers: { accept: "application/json" },
       signal: AbortSignal.timeout(15000),
     })
@@ -30,12 +31,13 @@ export async function authStatus(): Promise<AuthState> {
       return { required: false }
     }
     if (!response.ok) {
-      return { required: true, error: "the server did not answer" }
+      return { required: false, error: "Could not check desktop access. Try again." }
     }
-    const body = (await response.json()) as { required?: boolean }
-    return { required: body.required === true }
+    const body = (await response.json()) as { required?: boolean; authenticated?: boolean }
+    if (typeof body.required !== "boolean") throw new Error("invalid access status")
+    return { required: body.required, authenticated: body.authenticated === true }
   } catch {
-    return { required: false }
+    return { required: false, error: "Could not check desktop access. Try again." }
   }
 }
 
@@ -71,9 +73,6 @@ export async function signIn(password: string): Promise<AuthState> {
  * Ends the session of this browser.
  */
 export async function signOut(): Promise<void> {
-  try {
-    await fetch("/api/logout", { method: "POST" })
-  } catch {
-    // The session ends on the server or not at all, the client moves on.
-  }
+  const response = await fetch("/api/logout", { method: "POST", signal: AbortSignal.timeout(15000) })
+  if (!response.ok && response.status !== 401) throw new Error("Could not end desktop access. Try again.")
 }

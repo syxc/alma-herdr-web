@@ -2,52 +2,18 @@ import assert from "node:assert/strict"
 import { test } from "node:test"
 
 import { AlmaTunnel } from "../web/dist/alma.js"
-import {
-  closeRemote,
-  createTab,
-  createTerminalTab,
-  createWorkspace,
-  openAlmaRemote,
-  startAgent,
-} from "../web/dist/api.js"
+import { closeRemote, createTerminalTab, openAlmaRemote, startAgent } from "../web/dist/api.js"
 
-for (const method of ["workspace.create", "tab.create"]) {
-  test(`${method} uses the Alma RPC tunnel and reports refusal`, async (t) => {
-    const calls = []
-    let status = 200
-    t.mock.method(AlmaTunnel.prototype, "connect", async () => {})
-    t.mock.method(AlmaTunnel.prototype, "request", async (verb, path, body, headers) => {
-      calls.push({ verb, path, payload: JSON.parse(new TextDecoder().decode(body)), headers })
-      return {
-        status,
-        headers: {},
-        body: new TextEncoder().encode(
-          JSON.stringify(status === 200 ? { result: {} } : { error: { message: "creation refused" } }),
-        ),
-      }
-    })
-    await openAlmaRemote({ relay: "https://relay.example", code: "test-only" })
-    const create = () =>
-      method === "tab.create" ? createTab("w1", "/project", "acceptance") : createWorkspace("/project", "acceptance")
-    assert.equal(await create(), null)
-    assert.deepEqual(calls[0], {
-      verb: "POST",
-      path: "/api/herdr/rpc",
-      payload: {
-        method,
-        params: {
-          ...(method === "tab.create" ? { workspace_id: "w1" } : {}),
-          cwd: "/project",
-          label: "acceptance",
-          focus: true,
-        },
-      },
-      headers: { "content-type": "application/json" },
-    })
-    status = 403
-    assert.equal(await create(), "creation refused")
-  })
-}
+test("New Tab reports an Alma refusal without claiming that a pane was created", async (t) => {
+  t.mock.method(AlmaTunnel.prototype, "connect", async () => {})
+  t.mock.method(AlmaTunnel.prototype, "request", async () => ({
+    status: 403,
+    headers: {},
+    body: new TextEncoder().encode(JSON.stringify({ error: { message: "creation refused" } })),
+  }))
+  await openAlmaRemote({ relay: "https://relay.example", code: "test-only" })
+  assert.deepEqual(await createTerminalTab("w1", "/project"), { paneId: null, error: "creation refused" })
+})
 
 test("New Tab on Alma retains focus:false, extracts nested pane IDs, and reports missing IDs", async (t) => {
   const payloads = []
@@ -62,7 +28,7 @@ test("New Tab on Alma retains focus:false, extracts nested pane IDs, and reports
   assert.deepEqual(payloads[0], { method: "tab.create", params: { workspace_id: "w2", cwd: "/project", focus: false } })
   result = {}
   assert.match((await createTerminalTab("w2", null)).error, /did not return the new pane/)
-  assert.deepEqual(payloads[1].params, { workspace_id: "w2", focus: false })
+  assert.deepEqual(payloads[1].params, { workspace_id: "w2", cwd: "~", focus: false })
 })
 
 test("Alma retains shell readiness error codes for safe startup retries", async (t) => {

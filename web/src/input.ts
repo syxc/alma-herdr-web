@@ -15,6 +15,7 @@
 import { mapKey } from "./keys.js"
 import { adjacentCaret, characterCount, lineEdit, wordEnd, wordStart } from "./line-edit.js"
 import { KeyQueue, type KeySink } from "./send-queue.js"
+import { clearTerminalSelection, selectTerminalText, terminalSelection } from "./terminal-selection.js"
 
 export class TerminalInput {
   private readonly field: HTMLInputElement
@@ -31,6 +32,7 @@ export class TerminalInput {
     this.canvas = canvas
     this.queue = new KeyQueue(sink)
 
+    this.field.addEventListener("focus", () => clearTerminalSelection(this.canvas))
     this.field.addEventListener("keydown", (event) => this.onKeyDown(event))
     this.field.addEventListener("input", (event) => this.onInput(event))
     this.field.addEventListener("compositionend", () => {
@@ -40,7 +42,8 @@ export class TerminalInput {
     })
     this.field.addEventListener("click", () => this.onClick())
     this.field.addEventListener("keyup", () => this.onClick())
-    this.canvas.addEventListener("keydown", (event) => this.onCanvasKeyDown(event))
+    const screen = canvas.parentElement?.classList?.contains("terminal-surface") ? canvas.parentElement : canvas
+    screen.addEventListener("keydown", (event) => this.onCanvasKeyDown(event as KeyboardEvent))
   }
 
   /**
@@ -57,6 +60,7 @@ export class TerminalInput {
    * Sends the old pane's pending input before the caller changes its target.
    */
   reset(): void {
+    clearTerminalSelection(this.canvas)
     this.queue.flush()
     this.forget()
   }
@@ -65,6 +69,7 @@ export class TerminalInput {
    * Puts the cursor into the field, which brings up the keyboard of the phone.
    */
   focusField(): void {
+    clearTerminalSelection(this.canvas)
     this.field.focus()
   }
 
@@ -79,6 +84,7 @@ export class TerminalInput {
    * Sends the line and starts a new one.
    */
   submit(): void {
+    clearTerminalSelection(this.canvas)
     if (!this.enabled) {
       return
     }
@@ -90,6 +96,7 @@ export class TerminalInput {
    * Sends text, as if the reader had typed it.
    */
   type(text: string): void {
+    clearTerminalSelection(this.canvas)
     if (!this.enabled || text.length === 0) {
       return
     }
@@ -123,6 +130,7 @@ export class TerminalInput {
    * Sends keys the reader picked, like the chips under the screen.
    */
   sendSpecial(keys: string[]): void {
+    clearTerminalSelection(this.canvas)
     if (!this.enabled) {
       return
     }
@@ -296,6 +304,22 @@ export class TerminalInput {
    * The keys of the screen, which is the input surface of a desktop.
    */
   private onCanvasKeyDown(event: KeyboardEvent): void {
+    const selection = terminalSelection(this.canvas)
+    const command = event.ctrlKey || event.metaKey
+    if (selection !== null && command && event.key.toLowerCase() === "c") return
+    if (command && event.key.toLowerCase() === "a" && (selection !== null || event.target !== this.canvas)) {
+      selectTerminalText(this.canvas)
+      event.preventDefault()
+      return
+    }
+    if (selection !== null && event.key === "Escape") {
+      clearTerminalSelection(this.canvas)
+      event.preventDefault()
+      return
+    }
+    if (selection !== null && !command && !["Shift", "Control", "Alt", "Meta"].includes(event.key)) {
+      clearTerminalSelection(this.canvas)
+    }
     if (!this.enabled) {
       return
     }

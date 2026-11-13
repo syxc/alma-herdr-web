@@ -205,13 +205,11 @@ button svg {
   flex: none;
   pointer-events: none;
 }
-#pair-apply,
 #relay-connect {
   --button-surface: var(--accent);
   --button-line: transparent;
   color: var(--accent-ink);
 }
-#pair-apply:active:enabled,
 #relay-connect:active:enabled {
   filter: brightness(0.92);
 }
@@ -396,6 +394,11 @@ button.active {
   justify-self: end;
 }
 
+/* The list title uses the available left edge, including when no exit is shown. */
+#screen-list .app-bar {
+  display: flex;
+}
+
 /* The bar of one terminal keeps the number of the tab and the state of the
    pane on the left, the way the Alma app puts them. */
 #screen-detail .app-bar {
@@ -411,6 +414,11 @@ button.active {
   gap: 0;
 }
 
+#screen-list .app-bar-center {
+  flex: 1;
+  align-items: flex-start;
+}
+
 .app-bar-title {
   display: flex;
   align-items: center;
@@ -421,8 +429,14 @@ button.active {
   white-space: nowrap;
 }
 .app-bar-title .mark {
+  display: block;
+  flex: none;
+  width: 24px;
+  height: 24px;
   color: var(--fg);
-  font-size: 15px;
+  mask-image:
+    linear-gradient(to right, #000 55%, transparent 96%), linear-gradient(to bottom, #000 45%, transparent 92%);
+  mask-composite: intersect;
 }
 .app-bar-title .signal {
   color: var(--fg-muted);
@@ -494,7 +508,8 @@ button.active {
 
 .app-bar > .pill-group {
   display: grid;
-  grid-template-columns: repeat(2, 60px);
+  grid-auto-flow: column;
+  grid-auto-columns: 60px;
   align-items: center;
   justify-items: center;
 }
@@ -796,6 +811,35 @@ button.active {
 }
 #terminal-view.scroll-x {
   overflow-x: auto;
+}
+
+.terminal-surface {
+  position: relative;
+}
+.terminal-text {
+  position: absolute;
+  top: 0;
+  transform-origin: top left;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  white-space: pre;
+  user-select: text;
+  -webkit-user-select: text;
+  -webkit-touch-callout: default;
+  touch-action: auto;
+  cursor: text;
+  outline: none;
+}
+.terminal-text-row {
+  height: var(--terminal-line-height);
+}
+.terminal-text-row > span {
+  display: inline-block;
+  vertical-align: top;
+}
+.terminal-text ::selection {
+  color: transparent;
+  background: var(--selection);
 }
 
 #terminal {
@@ -1155,16 +1199,6 @@ button.active {
   border-color: var(--offline-line);
 }
 
-.sidebar-actions {
-  display: flex;
-  gap: 6px;
-  padding: 10px 14px;
-  border-bottom: 1px solid var(--line);
-}
-.sidebar-actions button {
-  flex: 1;
-}
-
 .tree {
   flex: 1;
   min-height: 0;
@@ -1309,29 +1343,40 @@ button.active {
 
 /* The remote access and the pairing ----------------------------------- */
 
-.remote-details {
-  border-top: 1px solid var(--line);
+.desktop-sharing {
+  width: min(420px, calc(100% - 32px));
+  max-height: min(85dvh, 760px);
+  padding: 0;
+  overflow-y: auto;
+  border: 1px solid var(--popover-line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  color: var(--fg);
+  box-shadow: 0 8px 24px var(--popover-shadow);
 }
-.remote-details > summary {
-  min-height: 44px;
-  padding: 12px 14px;
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--fg-muted);
-  cursor: pointer;
-  user-select: none;
+.desktop-sharing::backdrop {
+  background: rgba(0, 0, 0, 0.5);
 }
-.remote-details > summary {
-  list-style: none;
+.settings-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 8px 0 14px;
 }
-.remote-details > summary::-webkit-details-marker {
-  display: none;
+.settings-header h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
 }
-.remote-details > summary::marker {
-  content: "";
-}
-.remote-details > summary::after {
-  content: " \25be";
+.settings-close {
+  flex: none;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font-size: 22px;
 }
 
 .remote-panel {
@@ -1436,18 +1481,117 @@ button.active {
   content: " \25be";
   float: right;
 }
-.remote-details[open] > summary::after {
-  content: " \25b4";
-}
 .pair-details[open] > summary::after {
   content: " \25b4";
 }
 
 .pair-panel {
   display: flex;
+  flex: none;
+  flex-direction: column;
+  width: min(100%, 464px);
+  margin: 20px auto 28px;
+  padding: 0 24px;
+}
+.pairing-home {
+  overflow-y: auto;
+}
+.pairing-home .pair-panel {
+  margin-top: clamp(24px, 8vh, 72px);
+}
+.pairing-home .app-bar-title {
+  font-size: 16px;
+}
+.pairing-home .signal,
+.pairing-home .session-list {
+  display: none;
+}
+.pair-intro {
+  margin-bottom: 24px;
+}
+.pair-desktop {
+  display: block;
+  margin-bottom: 20px;
+  color: var(--fg-muted);
+}
+.pair-intro h1 {
+  margin: 0 0 10px;
+  color: var(--fg-strong);
+  font-size: 26px;
+  font-weight: 600;
+  letter-spacing: -0.5px;
+  line-height: 1.2;
+}
+.pair-intro p {
+  margin: 0;
+  color: var(--fg-muted);
+  font-size: 14px;
+  line-height: 1.6;
+}
+.pair-intro p + p {
+  margin-top: 10px;
+}
+#pair-scan {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   gap: 8px;
-  padding: 0 14px 12px;
-  background: var(--surface);
+  min-height: 48px;
+  font-size: 14px;
+}
+.pair-label {
+  margin-bottom: 8px;
+  color: var(--fg-muted);
+  font-size: 13px;
+}
+.pair-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 20px 0;
+  color: var(--fg-muted);
+  font-size: 12px;
+}
+.pair-divider::before,
+.pair-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--line-soft);
+}
+.pair-panel .compact-button::before {
+  inset: 0;
+}
+.pair-form {
+  display: flex;
+  gap: 8px;
+}
+.pair-form .compact-button {
+  flex: none;
+  min-width: 86px;
+  min-height: 48px;
+  font-size: 14px;
+}
+.pair-note {
+  margin: 12px 0 0;
+  color: var(--fg-muted);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.pair-note.error {
+  color: var(--danger-text);
+}
+.pair-privacy {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin: 24px 0 0;
+  color: var(--fg-muted);
+  font-size: 12px;
+}
+.pair-privacy svg {
+  flex: none;
 }
 .pair-panel input {
   flex: 1;
@@ -1455,9 +1599,9 @@ button.active {
   background: var(--surface-2);
   color: var(--fg);
   border: 1px solid var(--line);
-  min-height: 44px;
+  min-height: 48px;
   border-radius: var(--radius-control);
-  padding: 8px 12px;
+  padding: 10px 12px;
   font: inherit;
   font-size: 16px;
 }
@@ -1479,6 +1623,13 @@ button.active {
 }
 .scan-panel.hidden {
   display: none;
+}
+.pair-panel .scan-panel {
+  flex: none;
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-control);
 }
 .scan-panel video {
   width: 100%;
@@ -1589,7 +1740,7 @@ summary:active,
   height: 20px;
 }
 @media (max-width: 360px) {
-  .app-bar-title .mark,
+  .screen:not(.pairing-home) .app-bar-title .mark,
   .app-bar-title .signal {
     display: none;
   }
@@ -1659,19 +1810,6 @@ summary:active,
   .statusbar {
     font-size: 12px;
     padding: 4px 14px;
-  }
-
-  .pair-panel {
-    flex-wrap: wrap;
-    padding: 10px 12px;
-  }
-  .pair-panel input {
-    flex: 1 0 100%;
-    min-width: 0;
-  }
-  .pair-panel button {
-    flex: 1 1 0;
-    min-width: 0;
   }
 
   .relay-pair img {

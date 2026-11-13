@@ -294,6 +294,22 @@ test("width and mode changes keep the source character being read in view", asyn
   assert.ok(view.laidOut[top].includes(target), "Original Width keeps the same source character at the top")
 })
 
+test("hidden terminals defer layout and painting until their viewport returns", async (t) => {
+  const host = scrollHost()
+  host.clientWidth = 0
+  host.clientHeight = 0
+  const { view, operations } = environment(t, Promise.resolve(new Response(bytes)), host)
+  await ready(view)
+  await view.setContent(readingContent, 24)
+  assert.equal(operations.length, 0)
+  assert.equal(view.laidOut.length, 0)
+  host.clientWidth = 390
+  host.clientHeight = 190
+  view.resize()
+  assert.ok(view.laidOut.length > 0)
+  assert.ok(operations.some((operation) => operation.kind === "text"))
+})
+
 test("long snapshots paint only visible rows and repaint on reader scrolling", async (t) => {
   const host = scrollHost()
   const { view, canvas, operations } = environment(t, Promise.resolve(new Response(bytes)), host)

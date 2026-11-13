@@ -49,7 +49,7 @@ const server = createServer(async (request, response) => {
       .end(JSON.stringify({ stateReads, paneReads: reads, connections: mock.connections.size }))
     return
   }
-  if (path === "/check/activity" || path === "/check/input" || path === "/check/ui") {
+  if (path === "/check/activity" || path === "/check/input" || path === "/check/ui" || path === "/check/terminal") {
     const fixture = await readFile(
       resolve(
         root,
@@ -57,7 +57,9 @@ const server = createServer(async (request, response) => {
           ? "tests/ui-browser.html"
           : path === "/check/input"
             ? "tests/input-browser.html"
-            : "tests/activity-browser.html",
+            : path === "/check/terminal"
+              ? "tests/terminal-browser.html"
+              : "tests/activity-browser.html",
       ),
       "utf8",
     )
@@ -110,7 +112,8 @@ const server = createServer(async (request, response) => {
     response.writeHead(404).end()
   }
 })
-server.listen(7343, "127.0.0.1", () => console.log("Recovery check: http://127.0.0.1:7343/"))
+const port = Number(process.env.CHECK_PORT ?? 7343)
+server.listen(port, "127.0.0.1", () => console.log(`Recovery check: http://127.0.0.1:${port}/`))
 async function stop() {
   server.close()
   await mock.stop()

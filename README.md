@@ -1,12 +1,14 @@
 # alma-herdr-web
 
-Alma herdr 的 Web 终端客户端，可连接本机 herdr，也可通过 relay 配对 Alma 桌面端。
+Alma herdr 的手机 Web 终端客户端，用于查看电脑上已打开的 Agent 和终端，切换面板、查看输出并发送文字及常用控制键。可连接本机 herdr，也可通过 Alma 桌面端和 relay 访问目标机器上的 herdr。
+
+工作区、项目目录与运行环境由电脑端管理。Web 端只保留在已有工作区中快速启动 Agent 的 New Tab，不提供 New Workspace、目录浏览或重复的原生弹窗创建入口。
 
 [公开客户端](https://alma-herdr-web.nian1.workers.dev) · [协议说明](docs/protocol-notes.md) · [界面与交互](docs/ui-design.md) · [第三方资源](docs/third-party.md)
 
-## 连接桌面端
+## 连接目标机器上的 herdr
 
-打开公开客户端，使用 Scan QR 扫描 Alma 的远程访问二维码，或粘贴配对深链：
+在目标机器的 Alma 中打开“设置 › 远程访问”，登录 Alma 官方中继，或部署并使用自己的中继。在该页面获取配对链接或二维码，然后打开公开客户端，粘贴配对链接或使用 Scan QR code 扫码连接：
 
 ```text
 alma://connect?u=<relay url>&k=<connect code>&e2e=1
@@ -14,7 +16,7 @@ alma://connect?u=<relay url>&k=<connect code>&e2e=1
 
 桌面端需开启远程访问并保持在线。浏览器直接经 relay 与桌面端建立端到端加密连接，无需向静态站点提供 Alma 账号或 relay 注册令牌。页面内扫码需要 HTTPS 或 localhost，并需授予相机权限。
 
-配对成功后，连接资料保存在当前标签页的 `sessionStorage` 中。刷新会自动重连并恢复选中的终端；关闭标签页或选择 Forget paired desktop 后需重新配对。断线期间保留画面，超时后自动重连，未确认的输入不会重发。
+配对成功后，连接资料保存在当前标签页的 `sessionStorage` 中。刷新会自动重连并恢复选中的终端；关闭标签页或选择 Forget paired herdr 后需重新配对。断线期间保留画面，超时后自动重连，未确认的输入不会重发。
 
 ## 本机运行
 
@@ -39,13 +41,15 @@ npm start
 
 socket 路径优先使用 `HERDR_SOCKET_PATH`，其次是 `HERDR_SESSION` 对应的 `~/.config/herdr/sessions/<name>/herdr.sock`，最后使用默认路径。
 
-默认只监听回环地址。设置 `HERDR_WEB_HOST=0.0.0.0` 前应配置 `HERDR_WEB_PASSWORD`，因为未设口令时，能访问 HTTP 服务的设备即可调用本机 API。登录会话使用 HttpOnly、SameSite=Strict cookie。
+默认只监听回环地址。设置 `HERDR_WEB_HOST=0.0.0.0` 前应配置 `HERDR_WEB_PASSWORD`，因为未设口令时，能访问 HTTP 服务的设备即可调用本机 API。只有配置访问口令时才显示口令输入与退出入口；未设置时直接进入本机终端。登录会话使用 HttpOnly、SameSite=Strict cookie，有效会话刷新后继续使用。
 
 ## 终端操作
 
-- 列表按 Working、Blocked、Settled 分组，侧栏按工作区、标签和面板组织会话。
-- 详情页可切换面板、创建工作区和标签，文字与控制键直接发送到所选面板。
-- 输入按顺序合并发送；切换面板前会发送原面板队列。默认快捷栏依次为 Tab、Esc、Paste、Shift+Tab、↑、↓、Ctrl+C，其余按需添加。上下方向键浏览远端历史，回车提交。
+- 列表按 Working、Blocked、Settled 分组，侧栏按工作区、标签和面板组织会话。工作区右侧箭头独立展开或收起，状态刷新保留当前折叠选择；点名称仍进入其活动终端。
+- 详情页可切换面板，文字与控制键直接发送到所选面板。
+- 列表右上角 `+` 是唯一的 New Tab 入口，依次选择 Claude Code、Codex 或 pi 和已有工作区；优先沿用该工作区内首个可继承的面板目录，没有目录时使用电脑端用户主目录，不移动电脑端焦点。目录不可访问时明确报错；直连 Alma 若已回退创建 shell，不再启动 Agent。目标 Agent 须已安装在电脑端；启动失败保留已创建的终端并显示原因，切换到详情后提示仍可见。没有工作区时引导用户在电脑端打开工作区。
+- 输入按顺序合并发送；切换面板前会发送原面板队列。默认快捷栏参照 Alma 排列，包含 Ctrl、Esc、反引号、Ctrl+C、Shift+Tab、Tab、方向键、退格和 Paste，其余按需添加。上下方向键浏览远端历史，回车提交。
+- 终端输出支持桌面拖选、手机长按选择和系统复制；选中后使用 Cmd+C / Ctrl+C 或浏览器复制菜单。复制为无 ANSI 的源文本，保留代码缩进和原始换行；选取期间保留画面，清除选区后恢复最新输出。没有选区时 Ctrl+C 仍中断远端程序。
 - 显示方式包括 Wrap to Phone、Original Width 和 Shrink to Fit。窄屏默认按屏宽重排，宽屏默认保留原宽度；选择保存在本地。
 - 终端保持 14px 字号、21px 行高。向上滚动时保留阅读位置，回到底部后继续跟随输出。终端使用 Ghostty VT 处理宽字符与样式，图标字体按需加载并补绘。连续同色背景合并绘制；终端固定的黑白灰文字与消息底色随页面外观适配，彩色高亮保持原样。
 - 连接成功后收起常驻说明，连接详情收入更多菜单；连接中、重连和错误提示仍直接显示。
@@ -55,7 +59,7 @@ Alma 桌面端限制部分 RPC，如 `pane.focus`。客户端仍按面板 ID 读
 
 ## 通过本机 agent 远程访问
 
-本机页面的 Remote access 面板用于将 agent 注册到 relay：
+本机页面通过列表更多菜单的 Share this desktop 打开设置，将 agent 注册到 relay。该设置不占用工作区侧栏；静态客户端和已配对的远端会话不显示这个本机配置入口。连接另一台电脑仍使用 Join a remote session：
 
 1. 填写 relay 地址并选择 Connect。官方 `https://relay.alma.now` 需要 Alma relay 注册令牌，填入 Relay token；自建 relay 可按服务端配置留空。
 2. 在手机打开 Anywhere 二维码中的链接，或把链接粘贴到 Web 客户端。
@@ -67,7 +71,7 @@ New code 会更换连接码并使旧配对失效。agent 的连接身份保存�
 
 ## 静态部署
 
-静态站点只托管客户端，通过现有 relay 连接桌面端。无需部署 Node agent、KV、D1 或 Durable Objects。
+静态站点只托管客户端，通过现有 relay 连接桌面端。打开后直接显示扫码或粘贴链接的配对入口，不显示网站登录和退出登录。已有配对在当前标签页刷新后恢复。无需部署 Node agent、KV、D1 或 Durable Objects。
 
 ```bash
 npm ci
@@ -123,9 +127,10 @@ GitHub Actions 在推送到 `master`、提交 Pull Request 或手动触发时运
 | ------------------------------------------ | ------------------------------------------------------- |
 | `node scripts/check-icon-font-browser.mjs` | 字体按需加载、失败恢复、Canvas 补绘和字形比较           |
 | `node scripts/check-recovery-browser.mjs`  | 完整应用的刷新配对恢复、无响应和断线重连                |
+| `node scripts/check-auth-browser.mjs`      | 静态配对、本机免口令与口令解锁、退出及刷新恢复          |
 | `node scripts/e2e-check.mjs`               | 使用本机身份，经真实 relay 读取面板、输入命令并检查回显 |
 
-前两项输出仅监听回环地址的检查页面。字体服务的 `/terminal` 页面另检查 Canvas 明暗切换、静止快照重绘和三种模式的滚动；恢复服务的 `/check/phone` 提供 390 × 844 的应用预览，`/check/activity` 以受控可见性事件检查前后台读取及刷新恢复，`/check/input` 检查真实 DOM 中的 Unicode 编辑、光标与受控组合输入事件；`/check/ui` 使用原始页面与样式，在隔离页面检查明暗主题、320/390/1024px 布局、菜单位置、按钮形状、触摸区域与焦点，不连接桌面。第三项会实际向第一个面板输入命令，需在可操作的测试面板上运行。手机软键盘、中文 IME 和键盘遮挡需按[界面验收步骤](docs/ui-design.md#验收)在真机检查，桌面测试不覆盖这些行为。
+前三项输出仅监听回环地址的检查页面。认证服务在 7344、7345、7346 端口的 `/check/auth` 分别检查静态站、本机免口令和本机有口令模式，使用模拟桌面与隔离会话，不读取真实配对。字体服务的 `/terminal` 页面另检查 Canvas 明暗切换、静止快照重绘和三种模式的滚动；恢复服务的 `/check/phone` 提供 390 × 844 的应用预览，`/check/activity` 以受控可见性事件检查前后台读取及刷新恢复，`/check/input` 检查真实 DOM 中的 Unicode 编辑、光标与受控组合输入事件；`/check/ui` 使用原始页面与样式，在隔离页面检查明暗主题、320/390/1024px 布局、菜单位置、按钮形状、触摸区域与焦点，不连接桌面。`e2e-check.mjs` 会实际向第一个面板输入命令，需在可操作的测试面板上运行。手机软键盘、中文 IME 和键盘遮挡需按[界面验收步骤](docs/ui-design.md#验收)在真机检查，桌面测试不覆盖这些行为。
 
 `npm run privacy-check` 检查工作区文件；`npm run privacy-check -- --staged` 检查完整暂存区快照。`npm run privacy-check -- --install` 安装或更新提交钩子，使其检查暂存区，避免工作区的后续修改掩盖已暂存内容。检查日志只报告文件、行号和规则，不回显敏感值。仓库不保存连接码、路由令牌、二维码截图、本机配置或私有路径。第三方字体、WASM 与许可证按[资源说明](docs/third-party.md)维护。
 

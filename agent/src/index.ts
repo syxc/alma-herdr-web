@@ -8,6 +8,7 @@ import { type WebSocket, WebSocketServer } from "ws"
 
 import { createAuth, SESSION_COOKIE } from "./auth.js"
 import { loadConfig } from "./config.js"
+import { tabDirectory } from "./directory.js"
 import { HerdrClient, type HerdrSubscription } from "./herdr.js"
 import { deriveToken, hexToBytes, newConnectCode } from "./identity.js"
 import { RelayAgent } from "./relay.js"
@@ -496,6 +497,12 @@ async function main(): Promise<void> {
         response.end(JSON.stringify({ ok: false, error: "sign in first" }))
         return
       }
+      if (path === "/api/auth") {
+        response.setHeader("cache-control", "no-store")
+        response.writeHead(200)
+        response.end(JSON.stringify({ ok: true, required: auth.required, authenticated: auth.verify(request.headers) }))
+        return
+      }
       const body = request.method === "POST" ? parseJsonBody(await readBody(request)) : {}
       if (path === "/api/logout") {
         auth.signOut(request.headers)
@@ -531,8 +538,6 @@ async function main(): Promise<void> {
     auth: { required: boolean; signIn(password: string): { ok: boolean; token?: string; error?: string } },
   ): Promise<Json> {
     switch (path) {
-      case "/api/auth":
-        return { ok: true, required: auth.required }
       case "/api/login": {
         const result = auth.signIn(String(body.password ?? ""))
         if (!result.ok) {
@@ -587,13 +592,20 @@ async function main(): Promise<void> {
           label: body.label === undefined ? null : String(body.label),
           focus: body.focus !== false,
         })
-      case "/api/tab/create":
+      case "/api/tab/create": {
+        let cwd: string
+        try {
+          cwd = await tabDirectory(body.cwd)
+        } catch (error) {
+          return { ok: false, error: (error as Error).message, code: "invalid_cwd" }
+        }
         return agent.call("tab.create", {
           workspace_id: body.workspace_id === undefined ? null : String(body.workspace_id),
-          cwd: body.cwd === undefined ? null : String(body.cwd),
+          cwd,
           label: body.label === undefined ? null : String(body.label),
           focus: body.focus !== false,
         })
+      }
       case "/api/workspace/move":
         return agent.call("workspace.move", {
           workspace_id: String(body.workspace_id ?? ""),

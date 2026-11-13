@@ -3,9 +3,8 @@ import { randomBytes, timingSafeEqual } from "node:crypto"
 /**
  * The passphrase that guards the web client.
  *
- * The client goes to a cloud server, so the API must not be open to anyone
- * who knows the address. A server without a passphrase stays open, which
- * keeps the local use on a laptop the way it was.
+ * This optional passphrase protects the local agent API when the service
+ * is reachable from other devices. Static clients use desktop pairing.
  */
 export const SESSION_COOKIE = "alma_session"
 

@@ -2,6 +2,7 @@ import { type Cell, type Grid, parseAnsi } from "./ansi.js"
 import { IconFontLoader } from "./icon-font.js"
 import { layoutGrid } from "./layout.js"
 import { paintTerminal } from "./terminal-painter.js"
+import { TerminalSelection } from "./terminal-selection.js"
 import { TERMINAL_COLORS, type Theme } from "./terminal-theme.js"
 import { TerminalKernel } from "./vt.js"
 
@@ -22,6 +23,8 @@ export class TerminalView {
   private readonly context: CanvasRenderingContext2D
   private readonly host: HTMLElement | null
   private readonly surface: HTMLDivElement | null
+  private readonly selection: TerminalSelection | null
+  private pendingContent: { text: string; rows: number } | null = null
   private readonly kernel = new TerminalKernel()
   private readonly iconFonts = new IconFontLoader(() => this.render())
   private rows: Cell[][] = []
@@ -67,11 +70,31 @@ export class TerminalView {
     this.host = canvas.parentElement
     this.surface = this.host === null ? null : document.createElement("div")
     if (this.surface !== null) {
+      this.surface.className = "terminal-surface"
       canvas.before(this.surface)
       this.surface.append(canvas)
       canvas.style.position = "sticky"
       canvas.style.top = "0"
     }
+    this.selection =
+      this.surface !== null && typeof canvas.ownerDocument?.getSelection === "function"
+        ? new TerminalSelection(this.surface, canvas, (paused) => {
+            if (paused) {
+              this.follow = false
+              this.captureAnchor()
+              return
+            }
+            const pending = this.pendingContent
+            this.pendingContent = null
+            if (pending !== null) {
+              const revision = this.revision
+              void this.setContent(pending.text, pending.rows).then(() => {
+                // Unchanged queued text still needs a resize deferred during selection.
+                if (revision === this.revision) this.render()
+              })
+            } else this.render()
+          })
+        : null
     if (this.host !== null) {
       this.host.addEventListener("scroll", () => this.handleScroll())
     }
@@ -83,6 +106,10 @@ export class TerminalView {
   }
 
   async setContent(text: string, paneRows: number): Promise<void> {
+    if (this.selection?.active()) {
+      this.pendingContent = { text, rows: paneRows }
+      return
+    }
     const changed = text !== this.text || paneRows !== this.contentRows
     if (!changed && this.usingKernel) return
     if (changed) {
@@ -139,6 +166,10 @@ export class TerminalView {
   }
 
   private apply(rows: Cell[][], cols: number, paneRows: number): void {
+    if (this.selection?.active()) {
+      if (this.text !== null) this.pendingContent = { text: this.text, rows: this.contentRows }
+      return
+    }
     this.captureAnchor()
     this.rows = rows
     this.layoutDirty = true
@@ -182,6 +213,7 @@ export class TerminalView {
     this.captureAnchor()
     this.mode = mode
     this.layoutDirty = true
+    this.selection?.clear()
     if (this.host !== null) {
       this.host.classList.toggle("scroll-x", mode === "original")
       if (mode !== "original") this.host.scrollLeft = 0
@@ -190,7 +222,13 @@ export class TerminalView {
     this.render()
   }
 
+  clearSelection(): void {
+    this.pendingContent = null
+    this.selection?.clear()
+  }
+
   followBottom(): void {
+    this.clearSelection()
     this.follow = true
     this.anchorText = ""
     this.anchorSource = null
@@ -296,11 +334,12 @@ export class TerminalView {
       this.programmaticTop = null
     }
     this.topRow = Math.round(host.scrollTop / this.rowHeight)
-    this.follow = this.topRow + this.visibleRows() >= this.laidOut.length - 1
+    this.follow = !this.selection?.active() && this.topRow + this.visibleRows() >= this.laidOut.length - 1
     this.paint()
     if (this.snapTimer !== null) {
       window.clearTimeout(this.snapTimer)
     }
+    if (this.selection?.active()) return
     this.snapTimer = window.setTimeout(() => {
       this.snapTimer = null
       this.snap()
@@ -309,7 +348,7 @@ export class TerminalView {
 
   private snap(): void {
     const host = this.host
-    if (host === null || this.rowHeight === 0) {
+    if (host === null || this.rowHeight === 0 || this.selection?.active()) {
       return
     }
     const row = Math.round(host.scrollTop / this.rowHeight)
@@ -322,11 +361,14 @@ export class TerminalView {
   }
 
   render(): void {
+    if (this.selection?.active()) return
     const ctx = this.context
     const ratio = window.devicePixelRatio || 1
     const host = this.host
     const viewWidth = host === null ? 0 : host.clientWidth
     const viewHeight = host === null ? 0 : host.clientHeight
+    // A hidden detail must not reflow the whole snapshot into one-column DOM rows.
+    if (host !== null && (viewWidth <= 0 || viewHeight <= 0)) return
 
     ctx.setTransform(ratio, 0, 0, ratio, 0, 0)
     ctx.font = `${this.fontSize}px ${this.fontFamily}`
@@ -376,6 +418,15 @@ export class TerminalView {
       this.surface.style.height = `${canvasHeight}px`
     }
     this.syncSize()
+    this.selection?.update(this.laidOut, this.rows, {
+      width: contentWidth,
+      cellWidth: this.cellWidth,
+      cellHeight: this.cellHeight,
+      fontSize: this.fontSize,
+      fontFamily: this.fontFamily,
+      scale,
+      inset,
+    })
 
     if (host !== null) {
       if (this.follow) {

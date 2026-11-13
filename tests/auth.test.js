@@ -2,6 +2,46 @@ import assert from "node:assert/strict"
 import { test } from "node:test"
 
 import { createAuth } from "../agent/dist/auth.js"
+import { authStatus, signOut } from "../web/dist/auth.js"
+
+test("access status distinguishes static hosts, open agents and existing sessions", async (t) => {
+  for (const [status, body, expected] of [
+    [404, {}, { required: false }],
+    [200, { required: false, authenticated: true }, { required: false, authenticated: true }],
+    [200, { required: true, authenticated: false }, { required: true, authenticated: false }],
+    [200, { required: true, authenticated: true }, { required: true, authenticated: true }],
+    [200, { required: true }, { required: true, authenticated: false }],
+  ]) {
+    t.mock.method(globalThis, "fetch", async () => new Response(JSON.stringify(body), { status }))
+    assert.deepEqual(await authStatus(), expected)
+    t.mock.restoreAll()
+  }
+})
+
+test("failed access checks do not invent a passphrase requirement or silently open the app", async (t) => {
+  for (const reply of [
+    () => new Response("unavailable", { status: 503 }),
+    () => new Response("<html>fallback</html>"),
+    () => new Response(JSON.stringify({ ok: true })),
+    () => {
+      throw new Error("network unavailable")
+    },
+  ]) {
+    t.mock.method(globalThis, "fetch", async () => reply())
+    const state = await authStatus()
+    assert.equal(state.required, false)
+    assert.match(state.error, /Could not check desktop access/)
+    t.mock.restoreAll()
+  }
+})
+
+test("sign out reports server failures and accepts an already expired session", async (t) => {
+  t.mock.method(globalThis, "fetch", async () => new Response(null, { status: 503 }))
+  await assert.rejects(signOut, /Could not end desktop access/)
+  t.mock.restoreAll()
+  t.mock.method(globalThis, "fetch", async () => new Response(null, { status: 401 }))
+  await signOut()
+})
 
 test("a server without a passphrase lets every request through", () => {
   const auth = createAuth("")

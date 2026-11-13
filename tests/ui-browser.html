@@ -109,6 +109,7 @@
   function show(theme, width, view) {
     doc.documentElement.dataset.theme = theme
     preview.width = width
+    el("screen-startup").classList.add("hidden")
     el("screen-login").classList.toggle("hidden", view !== "login")
     el("app").classList.toggle("hidden", view === "login")
     el("screen-list").classList.toggle("hidden", view !== "list")
@@ -196,6 +197,20 @@
           }
           const center = back.closest("header").querySelector(".app-bar-center").getBoundingClientRect()
           const actions = back.closest("header").querySelector(".app-bar-right, .pill-group").getBoundingClientRect()
+          if (view === "list") {
+            const title = doc.querySelector("#screen-list .app-bar-title").getBoundingClientRect()
+            check(
+              Math.abs(title.left - center.left) < 0.5,
+              `${theme} ${width}px list: title and adjacent symbols align left`,
+            )
+            back.classList.add("hidden")
+            const aligned = doc.querySelector("#screen-list .app-bar-title").getBoundingClientRect()
+            check(
+              Math.abs(aligned.left - header.left - 19) < 0.5 && aligned.right <= more.getBoundingClientRect().left,
+              `${theme} ${width}px list: no-exit title starts at the left inset without overlapping actions`,
+            )
+            back.classList.remove("hidden")
+          }
           check(
             center.left >= back.getBoundingClientRect().right && center.right <= actions.left,
             `${theme} ${width}px ${view}: header text does not overlap actions`,
@@ -417,6 +432,11 @@
       "Workspace tree retains every pane title and backend order",
     )
     check(
+      el("tree").querySelector(".pane .tree-kind") === null &&
+        el("tree").querySelector(".pane").getAttribute("aria-label").startsWith("Pane:"),
+      "Pane rows show only their title while retaining accessible type labels",
+    )
+    check(
       el("tree").querySelectorAll("section.tree-workspace").length === 2 &&
         el("tree").querySelector(".tree-tab .tree-panes").children.length === 2 &&
         el("tree").querySelector(".count").textContent === "2 tabs" &&
@@ -477,6 +497,21 @@
         show(theme, width, "detail")
         el("sidebar").classList.add("open")
         await frame()
+        const sharing = el("desktop-sharing")
+        sharing.showModal()
+        await frame()
+        const sharingBounds = sharing.getBoundingClientRect()
+        check(
+          el("sidebar").querySelector("#remote-panel, #remote-details") === null &&
+            sharingBounds.left >= 12 &&
+            sharingBounds.right <= width - 12 &&
+            sharingBounds.top >= 0 &&
+            sharingBounds.bottom <= preview.height &&
+            sharing.scrollWidth <= sharing.clientWidth &&
+            el("desktop-sharing-close").offsetHeight >= 44,
+          `${theme} ${width}px: desktop sharing stays in a bounded dialog outside the workspace sidebar`,
+        )
+        sharing.close()
         check(
           [...el("tree").querySelectorAll(".tree-workspace")].every((workspace) => {
             const icon = workspace.querySelector(".workspace-toggle svg").getBoundingClientRect()
@@ -545,6 +580,35 @@
         el("sidebar").classList.remove("open")
       }
     }
+    const emptyList = doc.createElement("div")
+    renderSessionList(emptyList, { snapshot: { workspaces: [], panes: [] }, selectedPaneId: null, onPick() {} })
+    check(emptyList.textContent.includes("on your computer"), "No workspaces guides setup on the desktop")
+    renderSessionList(emptyList, {
+      snapshot: { workspaces: [{ workspace_id: "w1" }], panes: [] },
+      selectedPaneId: null,
+      onPick() {},
+    })
+    check(emptyList.textContent.includes("Use +"), "An existing empty workspace points to the supported New Tab menu")
+    const creationNotice = el("new-tab-status")
+    creationNotice.textContent = "Tab created; pi could not start: executable not found"
+    creationNotice.classList.remove("hidden")
+    creationNotice.classList.add("error")
+    for (const view of ["list", "detail"]) {
+      show("dark", 390, view)
+      await frame()
+      check(
+        creationNotice.getBoundingClientRect().height > 0 &&
+          creationNotice.getBoundingClientRect().width <= preview.width,
+        `New Tab failure remains visible in the ${view} screen`,
+      )
+    }
+    creationNotice.textContent = ""
+    creationNotice.classList.add("hidden")
+    creationNotice.classList.remove("error")
+    check(
+      el("list-new") !== null && doc.querySelector("#new-workspace, #new-tab, .sidebar-actions") === null,
+      "Only the supported New Tab menu remains; desktop workspace creation has no Web entry",
+    )
     show("dark", 390, "detail")
     el("detail-back").focus()
     document.title = "PASS: UI details"
