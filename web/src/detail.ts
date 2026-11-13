@@ -235,10 +235,20 @@ export class DetailScreen {
     this.actionSignature = signature
     this.actionMenu.replaceChildren()
 
-    const modes: { key: FitMode; label: string; glyph: string }[] = [
-      { key: "wrap", label: "Wrap to Phone", glyph: ICONS.wrap },
-      { key: "original", label: "Original Width", glyph: ICONS.width },
-      { key: "shrink", label: "Shrink to Fit", glyph: ICONS.shrink },
+    const modes: { key: FitMode; label: string; hint: string; glyph: string }[] = [
+      { key: "wrap", label: "Wrap to Phone", hint: "Wrap wide output at the current window width", glyph: ICONS.wrap },
+      {
+        key: "original",
+        label: "Original Width",
+        hint: "Keep the original width; scroll sideways if needed",
+        glyph: ICONS.width,
+      },
+      {
+        key: "shrink",
+        label: "Shrink to Fit",
+        hint: "Shrink wide output only; keep smaller output at normal size",
+        glyph: ICONS.shrink,
+      },
     ]
     for (const mode of modes) {
       const active = mode.key === this.mode
@@ -246,7 +256,7 @@ export class DetailScreen {
         this.item(
           active ? ICONS.check : mode.glyph,
           mode.label,
-          "",
+          mode.hint,
           () => {
             this.setMode(mode.key)
             this.closeActionMenu()

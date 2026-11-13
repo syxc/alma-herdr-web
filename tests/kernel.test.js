@@ -15,6 +15,43 @@ async function openKernel() {
   return GhosttyKernel.load(bytes)
 }
 
+test("native core paint uses actual dimensions and cursor positions", async () => {
+  const kernel = await openKernel()
+  const screen = kernel.setContent("\x1b[?1049h\x1b[2J\x1b[H1234567890Z\x1b[3;3H\x1b[31m你", 4, 10)
+  assert.equal(screen.cols, 10)
+  assert.equal(screen.rows[0].map((cell) => cell.ch).join(""), "1234567890")
+  assert.equal(screen.rows[1][0].ch, "Z")
+  assert.equal(screen.rows[2][2].ch, "你")
+  assert.equal(screen.rows[2][3].ch, "")
+  assert.equal(screen.rows[2][2].fg, "#e06c75")
+  const legacy = kernel.setContent("plain\r\nsnapshot", 4)
+  assert.deepEqual(
+    legacy.rows.map((row) => row.map((cell) => cell.ch).join("")),
+    ["plain", "snapshot"],
+  )
+  kernel.free()
+})
+
+test("native paint preserves joined emoji unless it explicitly changes grapheme mode", async () => {
+  const kernel = await openKernel()
+  for (const glyph of ["👩‍💻", "🇺🇸", "1️⃣"]) {
+    assert.deepEqual(
+      kernel.setContent(`${glyph}Z`, 4, 10).rows[0].map((cell) => cell.ch),
+      [glyph, "", "Z"],
+    )
+  }
+  kernel.free()
+})
+
+test("repeated snapshot replay reuses its WASM color parameters", async () => {
+  const kernel = await openKernel()
+  for (let i = 0; i < 100; i++) kernel.setContent("changing output", 5)
+  const size = kernel.wasm.memory.buffer.byteLength
+  for (let i = 0; i < 10000; i++) kernel.setContent("changing output", 5)
+  assert.equal(kernel.wasm.memory.buffer.byteLength, size)
+  kernel.free()
+})
+
 test("a character that is wider than one column owns the column after it", async () => {
   const kernel = await openKernel()
   const screen = kernel.setContent("你好 world", 5)

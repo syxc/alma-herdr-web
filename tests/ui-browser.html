@@ -116,6 +116,153 @@
     el("screen-detail").classList.toggle("hidden", view !== "detail")
     for (const id of ["action-menu", "list-menu", "tab-menu"]) el(id).classList.add("hidden")
   }
+  async function checkFitModes() {
+    const fitPreview = document.createElement("iframe")
+    fitPreview.id = "fit-preview"
+    fitPreview.title = "Real Detail fit mode checks"
+    fitPreview.height = "760"
+    fitPreview.style.maxWidth = "none"
+    results.before(fitPreview)
+    async function setup() {
+      const { DetailScreen } = await import("/dist/detail.js")
+      const { TerminalView } = await import("/dist/terminal.js")
+      for (const id of ["screen-startup", "screen-login", "screen-list"])
+        document.getElementById(id).classList.add("hidden")
+      for (const id of ["app", "screen-detail"]) document.getElementById(id).classList.remove("hidden")
+      const terminal = new TerminalView(document.getElementById("terminal"))
+      const modes = []
+      const pane = {
+        pane_id: "fixture-pane",
+        tab_id: "fixture-tab",
+        workspace_id: "fixture-workspace",
+        agent: null,
+        agent_session: null,
+        agent_status: "working",
+        title: "Isolated pane",
+        terminal_title_stripped: "",
+      }
+      const snapshot = {
+        panes: [pane],
+        tabs: [{ tab_id: pane.tab_id, workspace_id: pane.workspace_id, label: "Fixture" }],
+        workspaces: [{ workspace_id: pane.workspace_id, label: "Fixture" }],
+      }
+      const detail = new DetailScreen({
+        setFitMode(mode) {
+          modes.push(mode)
+          terminal.setMode(mode)
+        },
+        paneSize: () => terminal.size(),
+        pickPane() {},
+        sendText: async () => {},
+        sendKeys: async () => {},
+        restartAgent: async () => {},
+        toggleTree() {},
+        back() {},
+        status() {},
+      })
+      detail.update(snapshot, pane)
+      await terminal.kernel.load()
+      window.fitFixture = { terminal, detail, modes, pane, snapshot }
+    }
+    async function load() {
+      const loaded = new Promise((resolve) => fitPreview.addEventListener("load", resolve, { once: true }))
+      const markup = source.cloneNode(true)
+      const script = markup.createElement("script")
+      script.type = "module"
+      const ready = new Promise((resolve) => {
+        const receive = (event) => {
+          if (event.source !== fitPreview.contentWindow || event.data !== "detail-fit-ready") return
+          window.removeEventListener("message", receive)
+          resolve()
+        }
+        window.addEventListener("message", receive)
+      })
+      script.textContent = `(${setup.toString()})().then(() => parent.postMessage("detail-fit-ready", parent.location.origin))`
+      markup.body.append(script)
+      fitPreview.srcdoc = `<!doctype html>${markup.documentElement.outerHTML}`
+      await loaded
+      await ready
+      check(Boolean(fitPreview.contentWindow.fitFixture), "Real Detail fixture loads without a desktop connection")
+    }
+    fitPreview.width = "1440"
+    await load()
+    const labels = { wrap: "Wrap to Phone", original: "Original Width", shrink: "Shrink to Fit" }
+    const evidence = []
+    for (const width of [320, 390, 768, 1024, 1440]) {
+      fitPreview.width = String(width)
+      await frame()
+      const child = fitPreview.contentWindow
+      const childDoc = fitPreview.contentDocument
+      const { terminal, detail, snapshot, pane, modes } = child.fitFixture
+      const menu = childDoc.getElementById("action-menu")
+      const more = childDoc.getElementById("detail-more")
+      const host = childDoc.getElementById("terminal-view")
+      for (const cols of [20, 70, 240]) {
+        await terminal.setContent("X".repeat(cols), 39)
+        for (const mode of ["wrap", "original", "shrink"]) {
+          const prefix = `${width}px ${cols} cols ${mode}: `
+          more.click()
+          const item = [...menu.querySelectorAll("button")].find(
+            (button) => button.querySelector(".popover-label")?.textContent === labels[mode],
+          )
+          const bounds = item.getBoundingClientRect()
+          const hit = childDoc.elementFromPoint(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2)
+          check(item.contains(hit), `${prefix}menu item receives pointer hits`)
+          item.dispatchEvent(new child.MouseEvent("mousedown", { bubbles: true }))
+          for (let poll = 0; poll < 3; poll += 1) detail.update(snapshot, pane)
+          check(item.isConnected, `${prefix}polling preserves the pressed item`)
+          item.dispatchEvent(new child.MouseEvent("mouseup", { bubbles: true }))
+          item.click()
+          check(
+            menu.classList.contains("hidden") && modes.at(-1) === mode && terminal.mode === mode,
+            `${prefix}click applies mode and closes menu`,
+          )
+          more.click()
+          const checked = [...menu.querySelectorAll("button")].filter((button) =>
+            button.querySelector(".popover-glyph.on"),
+          )
+          check(
+            checked.length === 1 && checked[0].querySelector(".popover-label")?.textContent === labels[mode],
+            `${prefix}reopened menu marks only the selected mode`,
+          )
+          const usable = host.clientWidth - 38
+          const sourceWidth = terminal.paneCols * terminal.cellWidth
+          const scale = terminal.rowHeight / terminal.cellHeight
+          check(
+            terminal.fontSize === 14 &&
+              Math.abs(scale - (mode === "shrink" ? Math.min(1, usable / sourceWidth) : 1)) < 0.000001,
+            `${prefix}normal font and correct downscale`,
+          )
+          check(
+            mode === "original"
+              ? host.scrollWidth > host.clientWidth === sourceWidth > usable
+              : host.scrollWidth <= host.clientWidth,
+            `${prefix}correct horizontal scroll range`,
+          )
+          check(
+            terminal.laidOut.length ===
+              (mode === "wrap" ? Math.ceil(cols / Math.floor(usable / terminal.cellWidth)) : 1),
+            `${prefix}correct rendered row count`,
+          )
+          evidence.push({
+            width,
+            cols,
+            mode,
+            host: host.clientWidth,
+            scroll: host.scrollWidth,
+            rows: terminal.laidOut.length,
+            scale,
+          })
+          more.click()
+        }
+      }
+    }
+    await load()
+    check(fitPreview.contentWindow.fitFixture.modes[0] === "shrink", "The selected fit mode survives a fixture reload")
+    window.fitModeEvidence = evidence
+    // Leave a real menu and wide content available for trusted browser clicks.
+    await fitPreview.contentWindow.fitFixture.terminal.setContent("X".repeat(240), 39)
+  }
   const headerPositions = new Map()
   const lines = []
   function check(condition, message) {
@@ -624,6 +771,7 @@
     )
     show("dark", 390, "detail")
     el("detail-back").focus()
+    await checkFitModes()
     document.title = "PASS: UI details"
     lines.push("ALL CHECKS PASSED")
   } catch (error) {

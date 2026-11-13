@@ -101,8 +101,13 @@ export class AlmaMock {
   private port = 0
   private readonly paneText = new Map<string, string>()
   private revision = 0
+  private readonly streams = new Map<WebSocket, Map<string, (frame: Record<string, unknown>) => Promise<void>>>()
+  readonly requests: { path: string; method: string; params: Record<string, unknown> }[] = []
 
-  constructor(code = "mock-connect-code-0123456789abcdef") {
+  constructor(
+    code = "mock-connect-code-0123456789abcdef",
+    public snapshot: Record<string, unknown> | null = null,
+  ) {
     this.code = code
     // The second pane starts with its own text, so a test can tell the panes
     // apart when it switches between them.
@@ -130,6 +135,21 @@ export class AlmaMock {
 
   get url(): string {
     return `http://127.0.0.1:${this.port}`
+  }
+
+  async emitState(message: Record<string, unknown>): Promise<void> {
+    for (const [socket, streams] of this.streams) {
+      if (socket.readyState !== socket.OPEN) continue
+      for (const send of streams.values()) await send({ t: "wmsg", s: JSON.stringify(message) })
+    }
+  }
+
+  async closeStateStreams(): Promise<void> {
+    for (const [socket, streams] of this.streams) {
+      if (socket.readyState !== socket.OPEN) continue
+      for (const send of streams.values()) await send({ t: "wclose" })
+    }
+    this.streams.clear()
   }
 
   /** The text the mock pane shows, so a test can check what was typed. */
@@ -239,6 +259,29 @@ export class AlmaMock {
           const frame = decodeFrame(new Uint8Array(plain))
           if (frame.t === "hreq") {
             await this.answer(socket, frame, sendKey)
+          } else if (frame.t === "wopen" && sendKey !== null) {
+            const id = String(frame.id)
+            if (this.snapshot === null || frame.path !== "/ws/herdr") {
+              await this.send(socket, sendKey, encodeFrame({ t: "werr", id, message: "unknown stream" }))
+              return
+            }
+            const key = sendKey
+            const ids = this.streams.get(socket) ?? new Map()
+            ids.set(id, (frame: Record<string, unknown>) => this.send(socket, key, encodeFrame({ ...frame, id })))
+            this.streams.set(socket, ids)
+            await this.send(socket, sendKey, encodeFrame({ t: "wopened", id }))
+            await this.send(
+              socket,
+              sendKey,
+              encodeFrame({ t: "wmsg", id, s: JSON.stringify({ type: "herdr", online: true }) }),
+            )
+            await this.send(
+              socket,
+              sendKey,
+              encodeFrame({ t: "wmsg", id, s: JSON.stringify({ type: "snapshot", snapshot: this.snapshot }) }),
+            )
+          } else if (frame.t === "wclose") {
+            this.streams.get(socket)?.delete(String(frame.id))
           }
         } catch (error) {
           socket.close(4401, `e2e error: ${(error as Error).message}`)
@@ -260,7 +303,14 @@ export class AlmaMock {
         : (JSON.parse(decoder.decode(frame.b)) as { method?: string; params?: Record<string, unknown> })
     const method = String(body.method ?? "")
     const params = body.params ?? {}
-    const result = this.herdr(method, params)
+    const path = String(frame.path ?? "")
+    this.requests.push({ path, method, params })
+    const result =
+      path === "/api/herdr/info"
+        ? { status: this.snapshot === null ? 404 : 200, body: { online: true } }
+        : this.snapshot !== null && ["workspace.list", "tab.list", "pane.list"].includes(method)
+          ? { status: 403, body: { error: { code: "forbidden", message: "core uses snapshots" } } }
+          : this.herdr(method, params)
     const payload = new TextEncoder().encode(JSON.stringify(result.body))
     await this.send(
       socket,

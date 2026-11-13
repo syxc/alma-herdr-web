@@ -56,6 +56,12 @@ function shortPath(path: string): string {
   return path
 }
 
+export function terminalMachine(paneId: string): string | null {
+  const address = paneId.startsWith("hc:") ? paneId.slice(3) : paneId
+  if (/^t\d+$/.test(address)) return "This computer"
+  return /^(.+)\/t\d+$/.exec(address)?.[1] ?? null
+}
+
 function subtitle(pane: PaneRecord): { glyph: string; text: string } {
   const title = pane.terminal_title_stripped || pane.title || ""
   if (pane.agent !== null && pane.agent.length > 0) {
@@ -136,7 +142,9 @@ export function renderSessionList(container: HTMLElement, options: SessionListOp
       glyph.innerHTML = text.glyph
       const path = document.createElement("span")
       path.className = "path"
-      path.textContent = text.text
+      const machine = terminalMachine(pane.pane_id)
+      path.textContent = machine === null ? text.text : `${machine} · ${text.text}`
+      row.title = path.textContent
       sub.append(glyph, path)
 
       body.append(index, sub)

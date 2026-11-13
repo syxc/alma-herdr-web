@@ -7,7 +7,10 @@ import QRCode from "qrcode"
 import { type WebSocket, WebSocketServer } from "ws"
 
 import { createAuth, SESSION_COOKIE } from "./auth.js"
+import { AutoClient } from "./auto.js"
+import { coreSocketPaths, loginEndpoints, tuiSocketPaths } from "./backend-discovery.js"
 import { loadConfig } from "./config.js"
+import { CoreClient } from "./core.js"
 import { tabDirectory } from "./directory.js"
 import { HerdrClient, type HerdrSubscription } from "./herdr.js"
 import { deriveToken, hexToBytes, newConnectCode } from "./identity.js"
@@ -255,15 +258,15 @@ interface Json {
  * Keeps a browser facing view of the herdr session.
  */
 class HerdrWebAgent {
-  readonly client: HerdrClient
+  readonly client: HerdrClient | CoreClient | AutoClient
   readonly state = new SessionState()
   readonly sockets = new Set<WebSocket>()
   connected = false
 
   private paneSubscriptions: string[] = []
 
-  constructor(socketPath: string) {
-    this.client = new HerdrClient(socketPath)
+  constructor(client: HerdrClient | CoreClient | AutoClient) {
+    this.client = client
     this.client.onEvent((type, data) => {
       void this.onHerdrEvent(type, data)
     })
@@ -314,6 +317,11 @@ class HerdrWebAgent {
   private async onHerdrEvent(type: string, data: Record<string, unknown>): Promise<void> {
     if (type === "__connected") {
       await this.refreshSnapshot()
+      return
+    }
+    if (type === "__disconnected") {
+      this.connected = false
+      this.broadcastState()
       return
     }
     if (type === "pane_output_changed") {
@@ -428,7 +436,24 @@ function relayStatus(identity: RelayIdentity, relay: RelayAgent, port: number): 
 async function main(): Promise<void> {
   const config = loadConfig()
   const auth = createAuth(config.password)
-  const agent = new HerdrWebAgent(config.socketPath)
+  const environments = [process.env]
+  const client =
+    config.backend === "auto"
+      ? new AutoClient({
+          tuiSockets: () => tuiSocketPaths(environments),
+          coreSockets: () => coreSocketPaths(environments),
+        })
+      : config.backend === "core"
+        ? new CoreClient()
+        : new HerdrClient(config.socketPath)
+  const agent = new HerdrWebAgent(client)
+  if (config.backend === "auto") {
+    void loginEndpoints().then((env) => {
+      if (Object.keys(env).length === 0) return
+      environments.push(env)
+      void agent.refreshSnapshot()
+    })
+  }
   const identity = await loadIdentity()
   const relay = new RelayAgent({ host: config.host, port: config.port }, hexToBytes(identity.code))
 
@@ -588,6 +613,7 @@ async function main(): Promise<void> {
         })
       case "/api/workspace/create":
         return agent.call("workspace.create", {
+          ...(body.backend === "hc" ? { backend: "hc" } : {}),
           cwd: body.cwd === undefined ? null : String(body.cwd),
           label: body.label === undefined ? null : String(body.label),
           focus: body.focus !== false,
@@ -595,7 +621,11 @@ async function main(): Promise<void> {
       case "/api/tab/create": {
         let cwd: string
         try {
-          cwd = await tabDirectory(body.cwd)
+          // Core resolves directories on the selected machine, including remote homes.
+          const core =
+            config.backend === "core" ||
+            (config.backend === "auto" && String(body.workspace_id ?? "").startsWith("hc:"))
+          cwd = core ? String(body.cwd ?? "~") : await tabDirectory(body.cwd)
         } catch (error) {
           return { ok: false, error: (error as Error).message, code: "invalid_cwd" }
         }

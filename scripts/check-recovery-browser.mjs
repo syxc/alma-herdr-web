@@ -6,7 +6,42 @@ import { AlmaMock } from "../mock/dist/alma-mock.js"
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..")
 const web = resolve(root, "web")
-const mock = new AlmaMock()
+const core = process.env.CHECK_CORE === "1"
+const machines = ["local", "vps"]
+const snapshot = core
+  ? {
+      version: "core-0.1.21",
+      protocol: 1,
+      workspaces: machines.map((machine) => ({
+        workspace_id: machine,
+        label: machine,
+        number: 1,
+        tab_count: 1,
+        pane_count: 1,
+      })),
+      tabs: machines.map((machine) => ({
+        workspace_id: machine,
+        tab_id: `${machine}/tab`,
+        label: "project",
+        number: 1,
+        pane_count: 1,
+      })),
+      panes: machines.map((machine) => ({
+        workspace_id: machine,
+        tab_id: `${machine}/tab`,
+        pane_id: machine === "local" ? "hc:t1" : "hc:vps/t1",
+        cwd: "/project",
+        label: `${machine} terminal`,
+        agent_status: "idle",
+        scroll: { viewport_rows: 24 },
+      })),
+    }
+  : null
+const mock = new AlmaMock(undefined, snapshot)
+if (core) {
+  mock.paneText.set("hc:t1", "local terminal output")
+  mock.paneText.set("hc:vps/t1", "remote terminal output")
+}
 await mock.start()
 let paused = false
 let reads = 0
@@ -14,8 +49,8 @@ let stateReads = 0
 const answer = mock.answer.bind(mock)
 mock.answer = async (socket, frame, key) => {
   if (paused) return
-  const request = JSON.parse(new TextDecoder().decode(frame.b))
-  if (request.method === "workspace.list") stateReads += 1
+  const request = frame.b === undefined ? {} : JSON.parse(new TextDecoder().decode(frame.b))
+  if (request.method === "workspace.list" || (core && frame.path === "/api/herdr/info")) stateReads += 1
   if (request.method === "pane.read") {
     reads += 1
     mock.paneText.set(

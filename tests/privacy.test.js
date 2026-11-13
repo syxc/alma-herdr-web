@@ -218,7 +218,7 @@ function runScript(home, entry, env = {}) {
     ["--input-type=module", "-e", bootstrap, home, pathToFileURL(join(root, entry)).href],
     {
       cwd: root,
-      env: { ...process.env, ...env },
+      env: { ...process.env, HERDR_WEB_BACKEND: "tui", ...env },
       timeout: 10000,
     },
   )

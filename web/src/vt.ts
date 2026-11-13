@@ -55,12 +55,12 @@ export class TerminalKernel {
     return this.loading
   }
 
-  async setContent(text: string, paneRows: number): Promise<KernelScreen | null> {
+  async setContent(text: string, paneRows: number, paneCols = 0): Promise<KernelScreen | null> {
     if (!(await this.load()) || this.kernel === null) {
       return null
     }
     try {
-      const screen = this.kernel.setContent(text, paneRows)
+      const screen = this.kernel.setContent(text, paneRows, paneCols)
       return { rows: screen.rows.map(toCells), cols: screen.cols }
     } catch (error) {
       console.warn("the terminal kernel failed", error)

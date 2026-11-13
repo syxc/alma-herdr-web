@@ -60,6 +60,37 @@ async function ready(view) {
   await settle()
 }
 
+test("native core screen metadata reaches the renderer and participates in caching", async (t) => {
+  const { view } = environment(t)
+  await view.setContent("1234567890Z", 4, 10)
+  assert.deepEqual(view.size(), { cols: 10, rows: 4 })
+  assert.equal(view.rows[1][0].ch, "Z")
+  await view.setContent("1234567890Z", 4, 20)
+  assert.deepEqual(view.size(), { cols: 20, rows: 4 })
+  assert.equal(view.rows[0][10].ch, "Z")
+  await view.setContent("legacy", 4)
+  assert.equal(view.rows[0].map((cell) => cell.ch).join(""), "legacy")
+})
+
+test("selection during native kernel loading applies the pending screen after release", async (t) => {
+  const pending = Promise.withResolvers()
+  const { view } = environment(t, pending.promise)
+  await view.setContent("old screen", 4)
+  const next = view.setContent("new screen", 4, 80)
+  let selected = true
+  view.selection = { active: () => selected, update() {}, clear() {} }
+  pending.resolve(new Response(bytes))
+  await next
+  await settle()
+  assert.equal(view.rows[0].map((cell) => cell.ch).join(""), "old screen")
+  selected = false
+  const queued = view.pendingContent
+  assert.equal(queued.text, "new screen")
+  assert.equal(queued.cols, 80)
+  await view.setContent(queued.text, queued.rows, queued.cols)
+  assert.equal(view.rows[0].map((cell) => cell.ch).join(""), "new screen")
+})
+
 test("a late kernel repaints the latest snapshot without waiting for another poll", async (t) => {
   const pending = Promise.withResolvers()
   const { view, operations } = environment(t, pending.promise)
@@ -292,6 +323,36 @@ test("width and mode changes keep the source character being read in view", asyn
   view.setMode("original")
   const top = Math.round(host.scrollTop / view.rowHeight)
   assert.ok(view.laidOut[top].includes(target), "Original Width keeps the same source character at the top")
+})
+
+test("fit modes reflow or shrink only when content exceeds the viewport", async (t) => {
+  const host = scrollHost()
+  const { view, canvas } = environment(t, Promise.resolve(new Response(bytes)), host)
+  await ready(view)
+  for (const width of [320, 390, 768, 1024, 1440]) {
+    host.clientWidth = width
+    view.resize()
+    for (const cols of [20, 70, 240]) {
+      await view.setContent("X".repeat(cols), 39)
+      const originalWidth = view.paneCols * view.cellWidth
+      const usable = width - 38
+      view.setMode("original")
+      const originalRows = view.laidOut.length
+      assert.equal(view.rowHeight, view.cellHeight)
+      assert.equal(Number.parseFloat(canvas.style.width), Math.max(width, originalWidth + 38))
+      host.scrollLeft = 50
+      view.setMode("wrap")
+      assert.equal(view.rowHeight, view.cellHeight)
+      assert.equal(Number.parseFloat(canvas.style.width), width)
+      assert.equal(host.scrollLeft, 0)
+      assert.equal(view.laidOut.length > originalRows, originalWidth > usable)
+      view.setMode("shrink")
+      assert.equal(view.laidOut.length, originalRows)
+      assert.equal(Number.parseFloat(canvas.style.width), width)
+      assert.equal(view.rowHeight / view.cellHeight, Math.min(1, usable / originalWidth))
+      assert.equal(view.fontSize, 14, "changing mode does not change the source font size")
+    }
+  }
 })
 
 test("hidden terminals defer layout and painting until their viewport returns", async (t) => {

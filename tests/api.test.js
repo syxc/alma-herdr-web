@@ -76,6 +76,55 @@ test("pane writes stay ordered and continue after a failed send", async (t) => {
   ])
 })
 
+test("queued input cannot cross to another paired desktop", async (t) => {
+  const started = Promise.withResolvers()
+  const release = Promise.withResolvers()
+  const calls = []
+  t.mock.method(AlmaTunnel.prototype, "connect", async () => {})
+  t.mock.method(AlmaTunnel.prototype, "request", async function (_verb, _path, body) {
+    calls.push({ tunnel: this, request: JSON.parse(new TextDecoder().decode(body)) })
+    if (calls.length === 1) {
+      started.resolve()
+      await release.promise
+    }
+    return { status: 200, body: new TextEncoder().encode(JSON.stringify({ result: {} })) }
+  })
+  await openAlmaRemote({ relay: "https://first.example", code: "test-only" })
+  const first = sendText("vps/t1", "first")
+  await started.promise
+  const queued = sendKeys("vps/t1", ["enter"])
+  const rejected = assert.rejects(queued, /target desktop changed/)
+  await openAlmaRemote({ relay: "https://second.example", code: "test-only" })
+  const next = sendText("t1", "second")
+  release.resolve()
+  assert.equal(await first, null)
+  await rejected
+  assert.equal(await next, null)
+  assert.equal(calls.length, 2)
+  assert.notEqual(calls[0].tunnel, calls[1].tunnel)
+  assert.equal(calls[1].request.params.text, "second")
+  closeRemote()
+})
+
+test("Alma reports HTTP 200 RPC errors and preserves remote creation IDs", async (t) => {
+  const calls = []
+  let response = { result: { tab: { panes: [{ pane_id: "hc:vps/t2" }] } } }
+  t.mock.method(AlmaTunnel.prototype, "connect", async () => {})
+  t.mock.method(AlmaTunnel.prototype, "request", async (_verb, _path, body) => {
+    calls.push(JSON.parse(new TextDecoder().decode(body)))
+    return { status: 200, body: new TextEncoder().encode(JSON.stringify(response)) }
+  })
+  await openAlmaRemote({ relay: "https://relay.example", code: "test-only" })
+  assert.deepEqual(await createTerminalTab("hc:vps/project", "/srv/project"), { paneId: "hc:vps/t2", error: null })
+  assert.deepEqual(calls[0].params, { workspace_id: "hc:vps/project", cwd: "/srv/project", focus: false })
+  response = { error: { code: "machine_offline", message: "vps is offline" } }
+  assert.deepEqual(await startAgent("hc:vps/t2", "codex-vps-t2", "codex", []), {
+    code: "machine_offline",
+    error: "vps is offline",
+  })
+  closeRemote()
+})
+
 test("New Tab on the local API retains the new pane ID and does not move focus", async (t) => {
   closeRemote()
   const calls = []

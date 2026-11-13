@@ -109,6 +109,10 @@ export class GhosttyKernel {
     view: number
     style: number
     color: number
+    foreground: number
+    background: number
+    palette: number
+    scrollback: number
     buffer: number
     text: number
     textCap: number
@@ -159,6 +163,7 @@ export class GhosttyKernel {
   }
 
   private readonly decoder = new TextDecoder()
+  private colors = TERMINAL_COLORS.dark
 
   private constructor(wasm: GhosttyExports) {
     this.wasm = wasm
@@ -176,6 +181,10 @@ export class GhosttyKernel {
       view: this.alloc(8),
       style: this.alloc(this.typeSize("GhosttyStyle")),
       color: this.alloc(3),
+      foreground: this.alloc(3),
+      background: this.alloc(3),
+      palette: this.alloc(768),
+      scrollback: this.alloc(4),
       buffer: this.alloc(12),
       text: this.alloc(64),
       textCap: 64,
@@ -198,7 +207,16 @@ export class GhosttyKernel {
     return new GhosttyKernel(built.instance.exports as unknown as GhosttyExports)
   }
 
-  setContent(text: string, paneRows: number): VtScreen {
+  setContent(text: string, paneRows: number, paneCols = 0): VtScreen {
+    // Native core paint includes cursor positions and terminal modes, unlike SGR snapshots.
+    this.write("\x1bc")
+    this.setColors(this.colors)
+    if (paneCols > 0) {
+      this.resize(paneCols, Math.max(1, paneRows))
+      this.write("\x1b[?2027h")
+      this.write(text)
+      return { ...this.read(SCROLLBACK_LINES), cols: paneCols }
+    }
     const lines = text.split(/\r\n|\n/)
     if (lines.length > 1 && (lines[lines.length - 1] ?? "") === "") {
       lines.pop()
@@ -395,8 +413,8 @@ export class GhosttyKernel {
   }
 
   setColors(colors: TerminalColors = TERMINAL_COLORS.dark): void {
-    const foreground = this.alloc(3)
-    const background = this.alloc(3)
+    this.colors = colors
+    const { foreground, background, palette: palettePointer, scrollback } = this.slots
     const view = this.view()
     const fg = rgbBytes(colors.foreground)
     const bg = rgbBytes(colors.background)
@@ -410,11 +428,9 @@ export class GhosttyKernel {
     this.wasm.ghostty_terminal_set(this.terminal, this.ids.terminalOptColorBackground, background)
 
     const palette = paletteBytes(colors)
-    const palettePointer = this.alloc(palette.length)
     this.bytes().set(palette, palettePointer)
     this.wasm.ghostty_terminal_set(this.terminal, this.ids.terminalOptColorPalette, palettePointer)
 
-    const scrollback = this.alloc(4)
     this.view().setUint32(scrollback, SCROLLBACK_LINES, true)
     this.wasm.ghostty_terminal_set(this.terminal, this.ids.terminalOptScrollbackMaxLines, scrollback)
   }

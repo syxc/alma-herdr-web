@@ -100,6 +100,24 @@ test("exiting pi and refreshing backend tab metadata cannot change the displayed
   assert.deepEqual(renderedNumbers(view, after, after.panes.at(-1)), ["6", "6"])
 })
 
+test("same-number core terminals show their machine beside the directory", (t) => {
+  environment(t)
+  const state = fixture()
+  state.panes = ["hc:t1", "hc:vps/t1"].map((pane_id) => ({ ...state.panes[0], pane_id }))
+  const list = element()
+  renderSessionList(list, { snapshot: state, selectedPaneId: "hc:vps/t1", onPick() {} })
+  const rows = list.children.filter((node) => node.dataset.pane)
+  assert.deepEqual(
+    rows.map((row) => row.title),
+    ["This computer · /project", "vps · /project"],
+  )
+  assert.deepEqual(
+    rows.map((row) => row.dataset.pane),
+    ["hc:t1", "hc:vps/t1"],
+  )
+  assert.match(rows[1].className, /selected/)
+})
+
 test("split panes and multiple workspaces retain the same global numbering", (t) => {
   const view = environment(t)
   const state = fixture()
