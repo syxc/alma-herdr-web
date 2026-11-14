@@ -65,6 +65,59 @@ test("a failed history read restores live before propagating the error", async (
   assert.equal(app.sent.at(-1), end)
 })
 
+test("cancellation during the initial read never navigates the old pane", async () => {
+  const initial = Promise.withResolvers()
+  let current = true
+  const sent = []
+  const loading = loadPiHistory({
+    current: () => current,
+    connected: () => current,
+    read: () => initial.promise,
+    send: async (text) => {
+      sent.push(text)
+      return null
+    },
+  })
+  current = false
+  initial.resolve(page("cancelled pane"))
+  assert.equal(await loading, null)
+  assert.deepEqual(sent, [])
+})
+
+test("disconnecting during a screen read skips fallback reads and further navigation", async () => {
+  const reading = Promise.withResolvers()
+  const painted = Promise.withResolvers()
+  let current = true
+  let reads = 0
+  const sent = []
+  const loading = loadPiHistory({
+    current: () => current,
+    connected: () => current,
+    read: async () => {
+      if (++reads === 1) return page("initial")
+      reading.resolve()
+      return painted.promise
+    },
+    send: async (text) => {
+      sent.push(text)
+      return null
+    },
+  })
+  await reading.promise
+  current = false
+  painted.resolve(page("obsolete"))
+  assert.equal(await loading, null)
+  assert.equal(reads, 2, "the disconnected request cannot fall back to another read")
+  assert.deepEqual(sent, [end])
+})
+
+test("a native VT repaint after returning live cannot start pi paging", async () => {
+  const app = desktop()
+  app.request.read = async () => (app.sent.length === 0 ? app.latest : { ...app.latest, vt: true })
+  assert.equal(await loadPiHistory(app.request), null)
+  assert.ok(!app.sent.includes(up), "a changed screen mode cannot receive pi PageUp")
+})
+
 test("unrecognized and native VT screens never receive pi navigation", async () => {
   for (const initial of [{ text: "ordinary shell" }, { ...page("native"), vt: true }]) {
     const app = desktop()

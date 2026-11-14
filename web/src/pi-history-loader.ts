@@ -32,6 +32,7 @@ export async function loadPiHistory(request: PiHistoryRequest): Promise<{
       await new Promise((resolve) => setTimeout(resolve, 75))
       if (!valid()) return null
       const read = await request.read()
+      if (!valid()) return null
       if (read === null) throw new Error("the desktop did not return its screen")
       const key = piHistoryKey(read.text)
       if (read.vt || key === null) return null
@@ -51,11 +52,13 @@ export async function loadPiHistory(request: PiHistoryRequest): Promise<{
     if (!request.current()) return null
     // Ctrl+End is pi's own return-to-latest action, not a prompt or command.
     const initial = await request.read()
-    if (initial === null || initial.vt || piHistoryKey(initial.text) === null) return null
+    if (!request.current() || initial === null || initial.vt || piHistoryKey(initial.text) === null) return null
     navigated = true
     await send("\x1b[1;5F")
-    const latest = (await screen(piHistoryKey(initial.text))) ?? (await request.read())
-    if (latest === null) return null
+    const restored = await screen(piHistoryKey(initial.text))
+    if (!request.current()) return null
+    const latest = restored ?? (await request.read())
+    if (!request.current() || latest === null || latest.vt) return null
     const buffer = new PiHistoryBuffer(latest.text, request.limit ?? 1000)
     if (!buffer.supported) return null
     let key = piHistoryKey(latest.text)

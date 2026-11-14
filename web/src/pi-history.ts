@@ -174,7 +174,15 @@ export class PiHistoryBuffer {
       return
     }
     if (this.latest) {
-      const shared = overlap(this.latest.body, page.body)
+      let shared = overlap(this.latest.body, page.body)
+      if (shared === 0 && this.latest.body.length >= 3) {
+        // Streaming may extend the final row while earlier rows leave the viewport.
+        const last = comparable(this.latest.body.at(-1)!)
+        const stable = overlap(this.latest.body.slice(0, -1), page.body)
+        if (stable >= 2 && meaningful(last) && comparable(page.body[stable] ?? "").startsWith(last)) {
+          shared = stable + 1
+        }
+      }
       if (shared > 0) {
         const departed = slice(this.latest.body, 0, this.latest.body.length - shared)
         if (departed.length > 0) {

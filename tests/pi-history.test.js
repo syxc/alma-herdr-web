@@ -130,6 +130,19 @@ test("sliding latest viewports retain departed body rows once", () => {
   assert.deepEqual(body(buffer), ["prehistory", "one", "two", "three", "four", "five", "six", "seven", "eight"])
 })
 
+test("a growing last line preserves departed rows only behind trusted stable overlap", () => {
+  const buffer = new PiHistoryBuffer(screen(["departed", "stable one", "stable two", `${RED}partial`]))
+  buffer.updateLatest(screen(["stable one", "stable two", `${BLUE}partial extended`, "newest"]))
+  assert.deepEqual(body(buffer), ["departed", "stable one", "stable two", "partial extended", "newest"])
+  assert.ok(buffer.text.includes(`${BLUE}partial extended`), "the growing row keeps its current color")
+  const uncertain = new PiHistoryBuffer(screen(["departed", "only match", "partial"]))
+  uncertain.updateLatest(screen(["only match", "partial extended", "newest"]))
+  assert.deepEqual(body(uncertain), ["only match", "partial extended", "newest"])
+  const repainted = new PiHistoryBuffer(screen(["departed", "stable one", "stable two", "previous"]))
+  repainted.updateLatest(screen(["stable one", "stable two", "replacement", "newest"]))
+  assert.deepEqual(body(repainted), ["stable one", "stable two", "replacement", "newest"])
+})
+
 test("a duplicate initial page after a latest slide is still rejected", () => {
   const first = screen(["one", "two", "three"])
   const buffer = new PiHistoryBuffer(first)
