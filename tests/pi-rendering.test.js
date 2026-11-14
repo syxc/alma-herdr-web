@@ -35,6 +35,62 @@ test("a complete framed pi page is recognized without a blank row", () => {
   assert.deepEqual(sourceBody(new PiHistoryBuffer(input).text), content)
 })
 
+test("confirmed pane frames also cover partial startup pages without blank frame rows", () => {
+  const latest = ["latest output", "", "latest tail"]
+  const buffer = new PiHistoryBuffer([...latest.map(framed), ...footer].join("\r\n"))
+  const artwork = ["\x1b[35m██  synthetic logo\x1b[0m", "  unframed subtitle"]
+  const older = [framed("startup help"), ...artwork, framed("first description"), framed("second description")]
+  buffer.prepend([...older, ...footer].join("\r\n"))
+  const expected = [
+    "startup help",
+    "██  synthetic logo",
+    "  unframed subtitle",
+    "first description",
+    "second description",
+    ...latest,
+  ]
+  assert.deepEqual(sourceBody(buffer.text), expected)
+  assert.ok(buffer.text.includes("\x1b[35m██"), "startup artwork retains its ANSI color")
+  assert.ok(plain(older.join("\n")).includes("|"), "the input contains the residual pane frame")
+  for (const width of [34, 46, 80]) {
+    assert.ok(!displayed(layoutGrid(parseAnsi(buffer.text), width)).some((line) => line.includes("|")))
+  }
+  const table = [`|${" ".repeat(68)}|`, `|${"x".repeat(68)}|`, `|${"y".repeat(68)}|`]
+  buffer.prepend([...table, ...footer].join("\r\n"))
+  assert.deepEqual(sourceBody(buffer.text).slice(0, 3), table, "known pane width must not strip a table")
+  buffer.updateLatest("unrecognized alternate screen")
+  buffer.updateLatest([...older, ...footer].join("\r\n"))
+  assert.ok(
+    sourceBody(buffer.text).some((line) => line.endsWith("|")),
+    "an unknown repaint clears frame evidence",
+  )
+})
+
+test("pi frames can mix ASCII, thin, and heavy vertical strokes", () => {
+  const edge = (line, stroke) => framed(line).replace(/\|(?=\x1b\[0m$)/u, stroke)
+  const buffer = new PiHistoryBuffer([...footer].join("\r\n"))
+  buffer.prepend([...["known output", "", "known tail"].map((line) => edge(line, "┃")), ...footer].join("\r\n"))
+  const partial = [
+    edge("startup help", "┃"),
+    "\x1b[35m██ synthetic logo\x1b[0m",
+    edge("command | filter", "│"),
+    edge("startup tail", "|"),
+  ]
+  buffer.prepend([...partial, ...footer].join("\r\n"))
+  assert.deepEqual(sourceBody(buffer.text), [
+    "startup help",
+    "██ synthetic logo",
+    "command | filter",
+    "startup tail",
+    "known output",
+    "",
+    "known tail",
+  ])
+  const table = [`┃${" ".repeat(68)}┃`, `┃${"x".repeat(68)}┃`, `┃${"y".repeat(68)}┃`]
+  buffer.prepend([...table, ...footer].join("\r\n"))
+  assert.deepEqual(sourceBody(buffer.text).slice(0, 3), table)
+})
+
 test("pi keeps code pipelines and table borders without isolated right-frame evidence", () => {
   for (const content of [
     ["command | filter", "ending pipe |", ""],

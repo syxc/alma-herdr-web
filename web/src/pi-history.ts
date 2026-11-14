@@ -30,27 +30,29 @@ function slice(lines: string[], start = 0, end = lines.length): string[] {
 }
 
 // A repeated right-only pane frame is screen decoration, not transcript text.
-function withoutFrame(lines: string[], width: number): string[] {
+function withoutFrame(lines: string[], width: number, confirmed: boolean): string[] {
   const rows = parseAnsi(lines.join("\n")).cells
   const edges = rows.flatMap((row, index) =>
-    row.length === width && /^[|│]$/u.test(row[width - 1]?.ch ?? "") ? [index] : [],
+    row.length === width && /^[|│┃]$/u.test(row[width - 1]?.ch ?? "") ? [index] : [],
   )
   if (
     edges.length < 3 ||
-    (!edges.some((index) => comparable(lines[index]!).trim().length === 1) && edges.length !== rows.length) ||
+    (!confirmed &&
+      !edges.some((index) => comparable(lines[index]!).trim().length === 1) &&
+      edges.length !== rows.length) ||
     edges.some((index) => {
       const value = comparable(lines[index]!).trim()
-      return value.length > 1 && /^[|│]/u.test(value)
+      return value.length > 1 && /^[|│┃]/u.test(value)
     })
   )
     return lines
   const framed = new Set(edges)
   return lines.map((line, index) =>
-    framed.has(index) ? line.replace(/[|│]((?:\x1b\[[0-9;:]*m|[ \t\r])*)$/u, "$1") : line,
+    framed.has(index) ? line.replace(/[|│┃]((?:\x1b\[[0-9;:]*m|[ \t\r])*)$/u, "$1") : line,
   )
 }
 
-function parse(text: string): Page | null {
+function parse(text: string, frame?: { width: number | null }): Page | null {
   const lines = text.split("\n")
   const plain = lines.map(comparable)
   for (let index = lines.length - 4; index >= 0; index--) {
@@ -63,7 +65,11 @@ function parse(text: string): Page | null {
       end = marker
       while (end > 0 && plain[end - 1]!.trim() === "") end--
     }
-    return { body: withoutFrame(lines.slice(0, end), plain[index]!.trim().length), footer: slice(lines, index) }
+    const body = lines.slice(0, end)
+    const width = plain[index]!.trim().length
+    const content = withoutFrame(body, width, frame?.width === width)
+    if (frame !== undefined && content !== body) frame.width = width
+    return { body: content, footer: slice(lines, index) }
   }
   return null
 }
@@ -109,11 +115,13 @@ export class PiHistoryBuffer {
   private oldest: string[] | null = null
   private capped = false
   private readonly limit: number
+  // A partial page may omit the blank border rows that proved the pane frame.
+  private readonly frame: { width: number | null } = { width: null }
 
   constructor(latest: string, limit = 1000) {
     this.limit = Number.isFinite(limit) ? Math.max(1, Math.floor(limit)) : 1000
     this.raw = latest
-    this.latest = parse(latest)
+    this.latest = parse(latest, this.frame)
     this.supported = this.latest !== null
     this.trim()
   }
@@ -138,7 +146,7 @@ export class PiHistoryBuffer {
 
   prepend(older: string): boolean {
     if (!this.latest || this.full) return false
-    const page = parse(older)
+    const page = parse(older, this.frame)
     if (!page || page.body.length === 0) return false
     const oldest = this.oldest ?? this.latest.body
     if (same(page.body, oldest)) return false
@@ -153,13 +161,14 @@ export class PiHistoryBuffer {
   }
 
   updateLatest(latest: string): void {
-    const page = parse(latest)
+    const page = parse(latest, this.frame)
     if (!page) {
       // An unknown repaint must not inherit a guessed body/footer boundary.
       this.latest = null
       this.supported = false
       this.history = []
       this.oldest = null
+      this.frame.width = null
       this.capped = false
       this.raw = latest
       return
