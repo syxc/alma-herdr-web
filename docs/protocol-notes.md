@@ -102,7 +102,7 @@ relay 负责路由桌面端与浏览器之间的 HTTP 和 WebSocket 流量。协
 
 - 路由令牌：`base64url(SHA256("herdr-web/relay/v1/" + code))`。
 - 连接码是预共享密钥，用于认证双方临时 P-256 公钥。
-- ECDH 派生共享秘密，HKDF-SHA256 的 salt 为 `herdr-web/e2e/v1`，方向标签为 `session-c2a`、`session-a2c`。
+- 握手密钥的 HKDF-SHA256 salt 为 `utf8("herdr-web/e2e/v1")`；会话密钥以 ECDH 共享秘密为 IKM、连接码经 hex 解码后的原始字节为 salt，info 分别为 `session-c2a`、`session-a2c`。
 - AES-256-GCM 的 nonce 为 4 字节随机前缀和 8 字节大端计数器，AAD 为 `herdr-web/e2e/v1/frame`。
 
 ```jsonc
