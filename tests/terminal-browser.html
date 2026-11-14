@@ -179,12 +179,19 @@ try {
   await view.setContent(long, 24)
   await pause(80)
   check(host.scrollWidth <= host.clientWidth, "390px Wrap keeps normal-size text without horizontal overflow")
-  host.scrollTop = 21 * 10
+  if (host.scrollTop !== 21 * 10) {
+    const scrolled = new Promise((resolve) => host.addEventListener("scroll", resolve, { once: true }))
+    host.scrollTop = 21 * 10
+    await scrolled
+  }
   await pause(180)
   const anchor = host.scrollTop
   await view.setTheme("dark")
   await pause(80)
-  check(Math.abs(host.scrollTop - anchor) < 1, "Appearance change preserves a reader's scroll position")
+  check(
+    Math.abs(host.scrollTop - anchor) < 1,
+    `Appearance change preserves a reader's scroll position (before=${anchor}, after=${host.scrollTop}, follow=${view.follow})`,
+  )
   await view.setContent(`${long}\nnew output`, 24)
   await pause(80)
   check(Math.abs(host.scrollTop - anchor) < 1, "New output preserves the reading anchor")

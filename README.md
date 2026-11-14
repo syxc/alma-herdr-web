@@ -138,7 +138,7 @@ GitHub Actions 在包含非文档变更的推送到 `master`、Pull Request 或�
 
 | 命令                                       | 检查内容                                                |
 | ------------------------------------------ | ------------------------------------------------------- |
-| `node scripts/check-icon-font-browser.mjs` | 字体按需加载、失败恢复、Canvas 补绘和字形比较           |
+| `node scripts/check-icon-font-browser.mjs` | Canvas 回退的字体按需加载、失败恢复、补绘和字形比较     |
 | `node scripts/check-recovery-browser.mjs`  | 完整应用的刷新配对恢复、无响应和断线重连                |
 | `node scripts/check-auth-browser.mjs`      | 静态配对、本机免口令与口令解锁、退出及刷新恢复          |
 | `node scripts/e2e-check.mjs`               | 使用本机身份，经真实 relay 读取面板、输入命令并检查回显 |
