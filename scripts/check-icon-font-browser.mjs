@@ -22,7 +22,13 @@ createServer(async (request, response) => {
         ? "terminal-browser.html"
         : pathname === "/performance"
           ? "terminal-performance-browser.html"
-          : null
+          : pathname === "/color"
+            ? "terminal-color-scroll-browser.html"
+            : pathname === "/native"
+              ? "terminal-native-scroll-browser.html"
+              : pathname === "/touch"
+                ? "terminal-touch-browser.html"
+                : null
   const path = fixture === null ? resolve(web, `.${pathname}`) : resolve(root, "tests", fixture)
   if (fixture === null && !path.startsWith(web + sep)) {
     response.writeHead(404).end()

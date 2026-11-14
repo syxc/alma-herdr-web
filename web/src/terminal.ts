@@ -3,6 +3,7 @@ import { IconFontLoader } from "./icon-font.js"
 import { layoutGrid } from "./layout.js"
 import { TerminalPainter } from "./terminal-painter.js"
 import { type ScrollDirection, terminalScroll } from "./terminal-scroll.js"
+import { TerminalScrollPause } from "./terminal-scroll-pause.js"
 import { TerminalSelection } from "./terminal-selection.js"
 import { TERMINAL_COLORS, type Theme } from "./terminal-theme.js"
 import { TerminalViewport } from "./terminal-viewport.js"
@@ -26,6 +27,7 @@ export class TerminalView {
   private readonly host: HTMLElement | null
   private readonly surface: HTMLDivElement | null
   private readonly selection: TerminalSelection | null
+  private readonly nativeText: boolean
   private pendingContent: { text: string; rows: number; cols: number } | null = null
   private readonly kernel = new TerminalKernel()
   private readonly painter = new TerminalPainter()
@@ -53,7 +55,8 @@ export class TerminalView {
   private anchorSource: { text: string; row: number; column: number } | null = null
   private programmaticTop: number | null = null
   private paintFrame: number | null = null
-  private scrollTimer: number | null = null
+  private readonly scrollPause: TerminalScrollPause
+  private renderPending = false
   private text: string | null = null
   private contentRows = 0
   private contentCols = 0
@@ -64,7 +67,11 @@ export class TerminalView {
   private layoutWidth = -1
   private layoutCols = 0
 
-  constructor(canvas: HTMLCanvasElement, onBoundary?: (direction: ScrollDirection) => void) {
+  constructor(
+    canvas: HTMLCanvasElement,
+    onBoundary?: (direction: ScrollDirection) => void,
+    renderer: "text" | "canvas" = "text",
+  ) {
     this.canvas = canvas
     const context = canvas.getContext("2d")
     if (context === null) {
@@ -74,6 +81,7 @@ export class TerminalView {
     // The columns that fit depend on the width of the view, so the view is
     // the thing to observe.
     this.host = canvas.parentElement
+    this.scrollPause = new TerminalScrollPause(this.host, () => this.resume())
     this.surface = this.host === null ? null : document.createElement("div")
     if (this.surface !== null) {
       this.surface.className = "terminal-surface"
@@ -91,17 +99,18 @@ export class TerminalView {
               this.captureAnchor()
               return
             }
-            const pending = this.pendingContent
-            this.pendingContent = null
-            if (pending !== null) {
-              const revision = this.revision
-              void this.setContent(pending.text, pending.rows, pending.cols).then(() => {
-                // Unchanged queued text still needs a resize deferred during selection.
-                if (revision === this.revision && this.scrollTimer === null) this.render()
-              })
-            } else this.render()
+            this.resume()
           })
         : null
+    this.nativeText = this.selection !== null && renderer === "text"
+    this.selection?.element.classList.toggle("terminal-text-native", this.nativeText)
+    if (this.nativeText) {
+      canvas.style.opacity = "0"
+      canvas.style.pointerEvents = "none"
+      canvas.style.height = "1px"
+      canvas.width = 1
+      canvas.height = 1
+    }
     if (this.host !== null) {
       this.host.addEventListener("scroll", () => this.handleScroll(), { passive: true })
       terminalScroll(
@@ -123,8 +132,24 @@ export class TerminalView {
     this.resize()
   }
 
+  private get paused(): boolean {
+    return this.scrollPause.active || (this.selection?.active() ?? false)
+  }
+
+  private resume(): void {
+    if (this.paused) return
+    const pending = this.pendingContent
+    this.pendingContent = null
+    if (pending !== null) {
+      void this.setContent(pending.text, pending.rows, pending.cols).then(() => this.resume())
+    } else if (this.renderPending) {
+      this.captureAnchor()
+      this.render()
+    }
+  }
+
   async setContent(text: string, paneRows: number, paneCols = 0): Promise<void> {
-    if (this.selection?.active() || this.scrollTimer !== null) {
+    if (this.paused) {
       this.pendingContent = { text, rows: paneRows, cols: paneCols }
       return
     }
@@ -159,12 +184,16 @@ export class TerminalView {
 
   private async replay(): Promise<void> {
     if (this.text === null) return
+    if (this.paused) {
+      this.pendingContent ??= { text: this.text, rows: this.contentRows, cols: this.contentCols }
+      return
+    }
     const revision = this.revision
     const screen = await this.kernel.setContent(this.text, this.contentRows, this.contentCols)
     if (this.contentCols > 0 && screen === null) throw new Error("The native core screen could not be rendered")
     // Loading may finish after another pane or snapshot has replaced this one.
     if (revision !== this.revision) return
-    this.usingKernel = screen !== null && !this.selection?.active() && this.scrollTimer === null
+    this.usingKernel = screen !== null && !this.paused
     this.apply(
       screen?.rows ?? parseAnsi(this.text, TERMINAL_COLORS[this.theme].palette).cells,
       screen?.cols ?? 0,
@@ -181,6 +210,11 @@ export class TerminalView {
     this.revision += 1
     this.usingKernel = false
     if (this.text !== null) {
+      if (this.paused) {
+        this.pendingContent ??= { text: this.text, rows: this.contentRows, cols: this.contentCols }
+        this.renderPending = true
+        return
+      }
       if (this.kernel.ready) await this.replay()
       else this.apply(parseAnsi(this.text, colors.palette).cells, 0, this.contentRows)
     } else {
@@ -189,7 +223,7 @@ export class TerminalView {
   }
 
   private apply(rows: Cell[][], cols: number, paneRows: number): void {
-    if (this.selection?.active() || this.scrollTimer !== null) {
+    if (this.paused) {
       if (this.text !== null)
         this.pendingContent ??= { text: this.text, rows: this.contentRows, cols: this.contentCols }
       return
@@ -239,8 +273,8 @@ export class TerminalView {
   }
 
   clearSelection(): void {
-    if (this.scrollTimer !== null) window.clearTimeout(this.scrollTimer)
-    this.scrollTimer = null
+    this.scrollPause.clear()
+    this.renderPending = false
     this.pendingContent = null
     this.selection?.clear()
   }
@@ -355,17 +389,8 @@ export class TerminalView {
     }
     this.topRow = Math.round(host.scrollTop / this.rowHeight)
     this.follow = !this.selection?.active() && this.topRow + this.visibleRows() >= this.laidOut.length - 1
-    if (!restored && !this.follow) {
-      if (this.scrollTimer !== null) window.clearTimeout(this.scrollTimer)
-      // Replaying a full snapshot blocks scrolling and restoring its anchor cancels inertia.
-      this.scrollTimer = window.setTimeout(() => {
-        this.scrollTimer = null
-        const pending = this.pendingContent
-        this.pendingContent = null
-        if (pending !== null) void this.setContent(pending.text, pending.rows, pending.cols)
-      }, 120)
-    }
-    if (this.paintFrame !== null) return
+    if (!restored && !this.follow) this.scrollPause.extend()
+    if (this.nativeText || this.paintFrame !== null) return
     // Native scrolling owns the offset; paint its latest position once per frame.
     this.paintFrame = window.requestAnimationFrame(() => {
       this.paintFrame = null
@@ -374,7 +399,12 @@ export class TerminalView {
   }
 
   render(force = true): void {
-    if (this.selection?.active()) return
+    if (this.paused) {
+      this.renderPending = true
+      return
+    }
+    force ||= this.renderPending
+    this.renderPending = false
     const ctx = this.context
     const ratio = window.devicePixelRatio || 1
     const host = this.host
@@ -422,6 +452,7 @@ export class TerminalView {
     if (this.surface !== null) {
       this.surface.style.width = this.canvas.style.width
       this.surface.style.height = `${canvasHeight}px`
+      this.surface.style.backgroundColor = TERMINAL_COLORS[this.theme].background
     }
     this.selection?.update(this.laidOut, this.rows, {
       width: contentWidth,
@@ -431,6 +462,7 @@ export class TerminalView {
       fontFamily: this.fontFamily,
       scale,
       inset,
+      theme: this.theme,
     })
 
     if (host !== null) {
@@ -448,6 +480,8 @@ export class TerminalView {
   }
 
   private paint(force = false): void {
+    // Native glyphs and selection share the browser scroll layer; no JS repaint is needed.
+    if (this.nativeText) return
     if (this.paintFrame !== null) {
       window.cancelAnimationFrame(this.paintFrame)
       this.paintFrame = null

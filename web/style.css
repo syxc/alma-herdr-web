@@ -837,8 +837,16 @@ button.active {
   cursor: text;
   outline: none;
 }
+.terminal-text-native {
+  color: inherit;
+  -webkit-text-fill-color: currentColor;
+}
 .terminal-text-row {
   height: var(--terminal-line-height);
+}
+.terminal-text-native > .terminal-text-row {
+  /* Bound scroll-tile painting to rows without deferring their text or layout. */
+  contain: layout paint style;
 }
 .terminal-text-row > span {
   display: inline-block;
@@ -847,6 +855,9 @@ button.active {
 .terminal-text ::selection {
   color: transparent;
   background: var(--selection);
+}
+.terminal-text-native ::selection {
+  color: inherit;
 }
 
 #terminal {

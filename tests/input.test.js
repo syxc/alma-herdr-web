@@ -20,6 +20,23 @@ function key(name, options = {}) {
   }
 }
 
+test("desktop terminal focus retains the reading position for native text and canvas", () => {
+  for (const native of [true, false]) {
+    const focused = []
+    const layer = { focus: (options) => focused.push({ target: "text", options }) }
+    const canvas = Object.assign(new EventTarget(), {
+      parentElement: { querySelector: () => (native ? layer : null) },
+      focus: (options) => focused.push({ target: "canvas", options }),
+    })
+    const input = new TerminalInput(new EventTarget(), canvas, {
+      sendText: () => assert.fail("focus cannot type"),
+      sendKeys: () => assert.fail("focus cannot send keys"),
+    })
+    input.focusScreen()
+    assert.deepEqual(focused, [{ target: native ? "text" : "canvas", options: { preventScroll: true } }])
+  }
+})
+
 test("a character at the end of the line is only text", () => {
   assert.deepEqual(lineEdit("ls", 2, "lsi", 3), {
     backspaces: 0,

@@ -1,0 +1,168 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Terminal touch lifecycle checks</title>
+<link rel="stylesheet" href="/style.css">
+<style>
+html,
+body {
+  overflow: auto;
+}
+body {
+  margin: 20px;
+  background: white;
+  color: #111;
+  font: 14px system-ui;
+}
+#host {
+  width: 390px;
+  height: 400px;
+  overflow: auto;
+}
+pre {
+  white-space: pre-wrap;
+}
+</style>
+<h1>Terminal touch lifecycle checks</h1>
+<p>Controlled pointer cancellation and native scroll offsets; this does not emulate a physical touchscreen.</p>
+<div id="host"><canvas id="terminal"></canvas></div>
+<pre id="result">Running…</pre>
+<script type="module">
+import { TerminalView } from "/dist/terminal.js"
+
+const host = document.querySelector("#host")
+const canvas = document.querySelector("#terminal")
+const result = document.querySelector("#result")
+const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+const report = []
+const pages = []
+const view = new TerminalView(canvas, (direction) => pages.push(direction))
+await view.kernel.load()
+const layer = host.querySelector(".terminal-text")
+const sample = Array.from({ length: 100 }, (_, i) =>
+  `pi record ${i}: 中文与 English mixed text，保持正常字号与自然换行。`.repeat(3),
+).join(String.fromCharCode(10))
+let draws = 0
+let replays = 0
+const ctx = canvas.getContext("2d")
+const fillText = ctx.fillText.bind(ctx)
+ctx.fillText = (...args) => {
+  draws += 1
+  return fillText(...args)
+}
+const replay = view.kernel.setContent.bind(view.kernel)
+view.kernel.setContent = (...args) => {
+  replays += 1
+  return replay(...args)
+}
+const pointer = (type) =>
+  layer.dispatchEvent(
+    new PointerEvent(type, {
+      bubbles: true,
+      isPrimary: true,
+      button: 0,
+      pointerType: "touch",
+      pointerId: 1,
+    }),
+  )
+const touch = (type, y = 150) => {
+  const event = new Event(type, { bubbles: true })
+  const point = { clientX: 150, clientY: y }
+  Object.defineProperties(event, {
+    touches: { value: type === "touchstart" ? [point] : [] },
+    changedTouches: { value: [point] },
+  })
+  layer.dispatchEvent(event)
+}
+async function prepare() {
+  view.clearSelection()
+  await view.setContent(sample, 24)
+  host.scrollTop = 21 * 20
+  await pause(200)
+  draws = 0
+  replays = 0
+}
+async function check(name, run) {
+  try {
+    await prepare()
+    report.push({ name, ...(await run()) })
+  } catch (error) {
+    report.push({ name, error: error.message, pass: false })
+  }
+  result.textContent = JSON.stringify(report, null, 2)
+}
+await check("pointercancel before native scroll notification", async () => {
+  pointer("pointerdown")
+  host.scrollTop += 55.5
+  const target = host.scrollTop
+  pointer("pointercancel")
+  await Promise.resolve()
+  const shiftPx = host.scrollTop - target
+  return { shiftPx, glyphDraws: draws, pass: Math.abs(shiftPx) < 0.5 && draws === 0 }
+})
+await check("pointercancel after native scroll notification", async () => {
+  pointer("pointerdown")
+  host.scrollTop += 55.5
+  host.dispatchEvent(new Event("scroll"))
+  const target = host.scrollTop
+  pointer("pointercancel")
+  await Promise.resolve()
+  const shiftPx = host.scrollTop - target
+  return { shiftPx, glyphDraws: draws, pass: Math.abs(shiftPx) < 0.5 && draws === 0 }
+})
+await check("updates during a slow touch drag", async () => {
+  touch("touchstart")
+  pointer("pointerdown")
+  pointer("pointercancel")
+  await Promise.resolve()
+  const startReplays = replays
+  const startDraws = draws
+  let target = host.scrollTop
+  for (let tick = 0; tick < 3; tick += 1) {
+    host.scrollTop += 5.5
+    target = host.scrollTop
+    host.dispatchEvent(new Event("scroll"))
+    await view.setContent(
+      `${sample}
+latest ${tick}`,
+      24,
+    )
+    await pause(180)
+  }
+  const duringDragReplays = replays - startReplays
+  const duringDragGlyphDraws = draws - startDraws
+  touch("touchend")
+  await pause(240)
+  const latestApplied =
+    view.text ===
+      `${sample}
+latest 2` && view.pendingContent === null
+  const shiftPx = host.scrollTop - target
+  return {
+    duringDragReplays,
+    duringDragGlyphDraws,
+    latestApplied,
+    shiftPx,
+    pass: duringDragReplays === 0 && duringDragGlyphDraws === 0 && latestApplied && Math.abs(shiftPx) < 0.5,
+  }
+})
+await check("pi boundary swipes remain available after pointer cancellation", async () => {
+  const start = pages.length
+  for (const direction of [-1, 1]) {
+    host.scrollTop = direction < 0 ? 0 : host.scrollHeight
+    await pause(200)
+    pointer("pointerdown")
+    touch("touchstart")
+    pointer("pointercancel")
+    await Promise.resolve()
+    touch("touchend", direction < 0 ? 250 : 50)
+    await pause(200)
+  }
+  const directions = pages.slice(start)
+  return { directions, pass: JSON.stringify(directions) === "[-1,1]" }
+})
+document.title = report.every((entry) => entry.pass)
+  ? "PASS — Terminal touch lifecycle"
+  : "FAIL — Terminal touch lifecycle"
+result.textContent = JSON.stringify(report, null, 2)
+</script>

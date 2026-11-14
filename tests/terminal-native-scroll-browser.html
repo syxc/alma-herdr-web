@@ -1,0 +1,174 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Native terminal scrolling</title>
+<link rel="stylesheet" href="/style.css">
+<style>
+body {
+  margin: 0;
+  display: block;
+}
+#host {
+  width: 100%;
+  height: 80dvh;
+  overflow: auto;
+}
+#result {
+  white-space: pre-wrap;
+  font: 12px monospace;
+  height: 20dvh;
+  overflow: auto;
+}
+</style>
+<div id="host"><canvas id="terminal"></canvas></div>
+<pre id="result">Loading</pre>
+<script type="module">
+import { TerminalInput } from "/dist/input.js"
+import { TerminalView } from "/dist/terminal.js"
+import { selectTerminalText } from "/dist/terminal-selection.js"
+
+const host = document.querySelector("#host")
+const canvas = document.querySelector("#terminal")
+const result = document.querySelector("#result")
+const renderer = new URLSearchParams(location.search).get("renderer") === "canvas" ? "canvas" : "text"
+const view = new TerminalView(canvas, undefined, renderer)
+await view.kernel.load()
+const checks = []
+const check = (value, name) => {
+  if (!value) throw new Error(name)
+  checks.push(name)
+}
+const layer = host.querySelector(".terminal-text")
+await view.setContent("paint boundary", 24)
+if (view.nativeText) {
+  const containment = getComputedStyle(layer.firstElementChild).contain.split(" ")
+  check(
+    containment.includes("paint") || containment.includes("content"),
+    "native rows bound painting during long colored scrolling",
+  )
+}
+await view.setContent("\x1b[38;2;153;153;153mneutral\x1b[0m", 24)
+const darkColor = layer.querySelector("span").style.color
+await view.setTheme("light")
+check(layer.querySelector("span").style.color !== darkColor, "theme changes recolour unchanged RGB text")
+await view.setTheme("dark")
+const styled = "\x1b[31mRED\x1b[0m \x1b[1;3;4mstyled\x1b[0m 中文 👩‍💻\n  code()"
+await view.setContent(styled, 24)
+const red = [...layer.querySelectorAll("span")].find((span) => span.textContent === "RED")
+const decorated = [...layer.querySelectorAll("span")].find((span) => span.textContent === "styled")
+check(red && red.style.color !== "", "ANSI foreground is retained")
+if (view.nativeText)
+  check(getComputedStyle(red).webkitTextFillColor !== "rgba(0, 0, 0, 0)", "native glyphs are visible")
+check(
+  decorated &&
+    decorated.style.fontWeight === "bold" &&
+    decorated.style.fontStyle === "italic" &&
+    decorated.style.textDecoration === "underline",
+  "bold italic and underline survive",
+)
+const oldColor = red.style.color
+await view.setContent(styled.replace("[31m", "[32m"), 24)
+check(
+  [...layer.querySelectorAll("span")].find((span) => span.textContent === "RED").style.color !== oldColor,
+  "style-only updates repaint native text",
+)
+for (const mode of ["wrap", "original", "shrink"]) {
+  view.setMode(mode)
+  await view.setContent(styled, 24)
+  selectTerminalText(canvas)
+  check(
+    view.selection.selectedText() === "RED styled 中文 👩‍💻\n  code()",
+    `${mode}: copy retains source text and Unicode`,
+  )
+  view.clearSelection()
+}
+view.setMode("wrap")
+const sample = Array.from(
+  { length: 500 },
+  (_, index) => `\x1b[36m${index}\x1b[0m ${"中文输出 mixed English output，正常字号与代码缩进。 ".repeat(5)}`,
+).join("\n")
+await view.setContent(sample, 24)
+check(view.rows.length === 500, "long colored snapshots retain every source row")
+selectTerminalText(canvas)
+check(
+  view.selection.selectedText() ===
+    sample
+      .replace(/\x1b\[[0-9;:]*m/g, "")
+      .split("\n")
+      .map((line) => line.trimEnd())
+      .join("\n"),
+  "long colored content copies in full across paint boundaries",
+)
+view.clearSelection()
+view.follow = false
+host.scrollTop = Math.floor(host.scrollHeight / 2)
+await new Promise((resolve) => setTimeout(resolve, 250))
+if (view.nativeText) {
+  const input = new TerminalInput(document.createElement("input"), canvas, {
+    sendText: async () => null,
+    sendKeys: async () => null,
+  })
+  const before = host.scrollTop
+  input.focusScreen()
+  check(
+    document.activeElement === layer && host.scrollTop === before,
+    "desktop focus preserves the native reading position",
+  )
+}
+let glyphs = 0
+let rebases = 0
+let blanks = 0
+let frames = 0
+let last = performance.now()
+const intervals = []
+const paints = []
+const context = canvas.getContext("2d")
+const fillText = context.fillText.bind(context)
+context.fillText = (...args) => {
+  glyphs++
+  return fillText(...args)
+}
+const paint = view.paint.bind(view)
+view.paint = (...args) => {
+  const before = canvas.style.top
+  const start = performance.now()
+  paint(...args)
+  paints.push(performance.now() - start)
+  if (canvas.style.top !== before) rebases++
+}
+const percentile = (values, fraction) => {
+  const list = [...values].sort((a, b) => a - b)
+  return Math.round((list[Math.min(list.length - 1, Math.floor(list.length * fraction))] ?? 0) * 10) / 10
+}
+const frame = (now) => {
+  intervals.push(now - last)
+  last = now
+  frames++
+  const display = view.nativeText ? layer : canvas
+  const top = display.getBoundingClientRect().top - host.getBoundingClientRect().top + host.scrollTop
+  const height = display.getBoundingClientRect().height
+  if (host.scrollTop < top - 1 || host.scrollTop + host.clientHeight > top + height + 1) blanks++
+  if (frames % 30 === 0)
+    result.textContent = JSON.stringify(
+      {
+        ready: true,
+        nativeText: view.nativeText,
+        checks,
+        pass: view.nativeText && glyphs === 0 && rebases === 0 && blanks === 0,
+        rows: view.laidOut.length,
+        top: host.scrollTop,
+        glyphs,
+        rebases,
+        blanks,
+        paintP95: percentile(paints, 0.95),
+        paintMax: percentile(paints, 1),
+        frameP95: percentile(intervals, 0.95),
+        frameMax: percentile(intervals, 1),
+      },
+      null,
+      2,
+    )
+  requestAnimationFrame(frame)
+}
+requestAnimationFrame(frame)
+</script>

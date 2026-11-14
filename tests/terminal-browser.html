@@ -60,7 +60,7 @@ function pixel(x, y) {
     .join(",")
 }
 try {
-  const view = new TerminalView(canvas)
+  const view = new TerminalView(canvas, undefined, "canvas")
   await view.kernel.load()
   let paints = 0
   const render = view.render.bind(view)

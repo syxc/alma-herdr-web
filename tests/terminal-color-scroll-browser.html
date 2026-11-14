@@ -1,0 +1,189 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Colored terminal scroll comparison</title>
+<link rel="stylesheet" href="/style.css">
+<style>
+body {
+  margin: 0;
+  display: block;
+}
+header {
+  height: 44px;
+  display: flex;
+  gap: 8px;
+}
+#host {
+  height: 70dvh;
+  width: 100%;
+  overflow: auto;
+}
+#result {
+  height: calc(30dvh - 44px);
+  overflow: auto;
+  white-space: pre-wrap;
+  font: 12px monospace;
+}
+</style>
+<header>
+  <select id="variant" aria-label="Color style">
+    <option value="plain">Plain</option>
+    <option value="foreground">Foreground</option>
+    <option value="background">Background</option>
+    <option value="rich">Rich</option>
+  </select><button id="start" type="button">Start</button><button id="stop" type="button">Report</button
+  ><span id="status">Loading</span>
+</header>
+<div id="host"><canvas id="terminal"></canvas></div>
+<pre id="result"></pre>
+<script type="module">
+import { TerminalView } from "/dist/terminal.js"
+
+const host = document.querySelector("#host")
+const canvas = document.querySelector("#terminal")
+const status = document.querySelector("#status")
+const result = document.querySelector("#result")
+const variant = document.querySelector("#variant")
+const view = new TerminalView(canvas)
+window.colorComparison = { view, host }
+await view.kernel.load()
+const foregrounds = [
+  "38;2;220;223;228",
+  "38;2;198;120;221",
+  "38;2;86;182;194",
+  "38;2;152;195;121",
+  "38;2;224;108;117",
+  "38;2;229;192;123",
+]
+const backgrounds = ["48;2;40;44;52", "48;2;45;49;58", "48;2;38;42;48"]
+const pieces = Array.from({ length: 1000 }, (_, line) => [
+  `${line}: `,
+  "读取终端内容 ",
+  "const result = ",
+  "await render(snapshot); ",
+  "中文与 English mixed output，保持字形和缩进。 ",
+  "function update() { return true; } ",
+  "后续内容继续输出 ",
+  "status=ready ",
+])
+let previous = 0
+let active = false
+let frames = []
+let scrolls = 0
+let mutations = 0
+let added = 0
+let removed = 0
+const observer = new MutationObserver((records) => {
+  if (!active) return
+  for (const record of records) {
+    mutations++
+    added += record.addedNodes.length
+    removed += record.removedNodes.length
+  }
+})
+observer.observe(host, { subtree: true, childList: true, attributes: true, characterData: true })
+const tasks = []
+new PerformanceObserver((list) => {
+  if (active) for (const entry of list.getEntries()) tasks.push(entry.duration)
+}).observe({ type: "longtask", buffered: false })
+host.addEventListener(
+  "scroll",
+  () => {
+    if (active) scrolls++
+  },
+  { passive: true },
+)
+const frame = (now) => {
+  if (active) {
+    frames.push(now - previous)
+    previous = now
+  }
+  requestAnimationFrame(frame)
+}
+requestAnimationFrame(frame)
+const load = async () => {
+  active = false
+  status.textContent = "Loading"
+  const kind = variant.value
+  const sample = pieces
+    .map((parts, line) =>
+      parts
+        .map((text, index) => {
+          if (kind === "plain") return text
+          const codes = []
+          if (kind === "foreground" || kind === "rich") codes.push(foregrounds[(line + index) % foregrounds.length])
+          if (kind === "background" || kind === "rich")
+            codes.push(backgrounds[Math.floor(line / 3) % backgrounds.length])
+          if (kind === "rich" && index % 3 === 1) codes.push("1")
+          if (kind === "rich" && index % 5 === 2) codes.push("3;4")
+          return `\x1b[${codes.join(";")}m${text}\x1b[0m`
+        })
+        .join(""),
+    )
+    .join("\n")
+  view.clearSelection()
+  await view.setContent(sample, 24)
+  view.follow = false
+  host.scrollTop = Math.floor((host.scrollHeight - host.clientHeight) / 2)
+  await new Promise((resolve) => setTimeout(resolve, 250))
+  status.textContent = "Ready"
+  result.textContent = JSON.stringify(
+    {
+      kind,
+      rows: view.laidOut.length,
+      spans: host.querySelectorAll("span").length,
+      sourceCharacters: pieces.flat().join("").length,
+      kernelRows: view.rows.length,
+      complete:
+        view.rows
+          .map((row) =>
+            row
+              .map((cell) => cell.ch)
+              .join("")
+              .trimEnd(),
+          )
+          .join("\n") === pieces.map((parts) => parts.join("").trimEnd()).join("\n"),
+    },
+    null,
+    2,
+  )
+}
+variant.addEventListener("change", () => void load())
+document.querySelector("#start").addEventListener("click", () => {
+  frames = []
+  scrolls = 0
+  mutations = 0
+  added = 0
+  removed = 0
+  tasks.length = 0
+  previous = performance.now()
+  active = true
+  status.textContent = "Recording"
+})
+const percentile = (values, fraction) => {
+  const sorted = [...values].sort((a, b) => a - b)
+  return Math.round((sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * fraction))] ?? 0) * 10) / 10
+}
+document.querySelector("#stop").addEventListener("click", () => {
+  active = false
+  status.textContent = "Done"
+  result.textContent = JSON.stringify(
+    {
+      kind: variant.value,
+      rows: view.laidOut.length,
+      spans: host.querySelectorAll("span").length,
+      scrolls,
+      mutations,
+      added,
+      removed,
+      longTasks: tasks,
+      frameP95: percentile(frames, 0.95),
+      frameMax: percentile(frames, 1),
+      frames: frames.length,
+    },
+    null,
+    2,
+  )
+})
+await load()
+</script>

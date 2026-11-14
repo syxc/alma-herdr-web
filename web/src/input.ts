@@ -77,7 +77,8 @@ export class TerminalInput {
    * Puts the cursor onto the screen, which is the input surface of a desktop.
    */
   focusScreen(): void {
-    this.canvas.focus()
+    const target = this.canvas.parentElement?.querySelector<HTMLElement>(".terminal-text-native") ?? this.canvas
+    target.focus({ preventScroll: true })
   }
 
   /**
