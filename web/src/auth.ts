@@ -4,6 +4,7 @@
  * Only a local agent can require an access passphrase. Static hosts use
  * desktop pairing instead. The local session uses an HttpOnly cookie.
  */
+import { isStaticHost } from "./static-host.js"
 
 export interface AuthState {
   /** Whether the server asks for a passphrase. */
@@ -21,6 +22,7 @@ export interface AuthState {
  * the client opens the app and lets the calls decide.
  */
 export async function authStatus(): Promise<AuthState> {
+  if (isStaticHost()) return { required: false }
   try {
     const response = await fetch("/api/auth", {
       cache: "no-store",

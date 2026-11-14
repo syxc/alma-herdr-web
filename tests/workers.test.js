@@ -76,14 +76,25 @@ test("Workers preserves missing API routes instead of serving the page shell", a
   assert.ok(config.build.watch_dir.includes("./web/src"))
 })
 
-test("the hosted client needs no local login or event WebSocket", async (t) => {
+test("the worker shell marks itself as a static host, the local shell does not", async () => {
+  const workerShell = await readFile(join(assets, "index.html"), "utf8")
+  const localShell = await readFile(join(root, "web", "index.html"), "utf8")
+  assert.match(workerShell, /__ALMA_STATIC__=true/)
+  assert.doesNotMatch(localShell, /__ALMA_STATIC__/)
+})
+
+test("a stamped static host skips the local probes and needs no event WebSocket", async (t) => {
   const originalFetch = globalThis.fetch
   const originalWebSocket = globalThis.WebSocket
+  const originalMarker = globalThis.__ALMA_STATIC__
   const paths = []
   t.after(() => {
     globalThis.fetch = originalFetch
     globalThis.WebSocket = originalWebSocket
+    if (originalMarker === undefined) delete globalThis.__ALMA_STATIC__
+    else globalThis.__ALMA_STATIC__ = originalMarker
   })
+  globalThis.__ALMA_STATIC__ = true
   globalThis.fetch = async (path) => {
     paths.push(path)
     return new Response(null, { status: 404 })
@@ -93,13 +104,36 @@ test("the hosted client needs no local login or event WebSocket", async (t) => {
       throw new Error("A static host has no local event socket")
     }
   }
-  const { authStatus } = await import("../web/dist/auth.js")
-  const api = await import("../web/dist/api.js")
+  // A unique query gives this test its own module instance, so the cached
+  // localApi result of another test cannot mask the fetch behaviour here.
+  const { authStatus } = await import("../web/dist/auth.js?stamped=1")
+  const api = await import("../web/dist/api.js?stamped=1")
   assert.deepEqual(await authStatus(), { required: false })
   assert.equal(await api.hasLocalApi(), false)
   assert.equal(api.hasEventStream(), false)
   assert.equal(api.needsStatePolling(), false)
   const stop = api.connectEvents(() => assert.fail("A static host must not push local state"))
   stop()
+  assert.deepEqual(paths, [], "the hosted client must not request local API routes")
+})
+
+test("an unmarked static host still falls back to the 404 contract", async (t) => {
+  const originalFetch = globalThis.fetch
+  const originalMarker = globalThis.__ALMA_STATIC__
+  const paths = []
+  t.after(() => {
+    globalThis.fetch = originalFetch
+    if (originalMarker === undefined) delete globalThis.__ALMA_STATIC__
+    else globalThis.__ALMA_STATIC__ = originalMarker
+  })
+  delete globalThis.__ALMA_STATIC__
+  globalThis.fetch = async (path) => {
+    paths.push(path)
+    return new Response(null, { status: 404 })
+  }
+  const { authStatus } = await import("../web/dist/auth.js?unmarked=1")
+  const api = await import("../web/dist/api.js?unmarked=1")
+  assert.deepEqual(await authStatus(), { required: false })
+  assert.equal(await api.hasLocalApi(), false)
   assert.deepEqual(paths, ["/api/auth", "/api/state"])
 })

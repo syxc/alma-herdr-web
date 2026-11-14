@@ -148,6 +148,29 @@ test("split panes and multiple workspaces retain the same global numbering", (t)
   }
 })
 
+test("the switcher shows consecutive numbers and never leaks a core tab id", (t) => {
+  const view = environment(t)
+  const state = fixture()
+  // The third terminal comes from a merged core tab: no friendly label, only
+  // a long opaque id. It used to be printed verbatim and wrap to two lines.
+  state.panes = [1, 2, 3].map((id) => ({
+    ...state.panes[0],
+    pane_id: `p${id}`,
+    tab_id: id === 3 ? "hc:tb7a06ddb835c585a8957941151ee37f09" : `t${id}`,
+    terminal_title_stripped: "π - pi-mono",
+  }))
+  state.tabs = state.panes.map((pane, index) => ({
+    tab_id: pane.tab_id,
+    workspace_id: "w1",
+    label: index < 2 ? String(index + 1) : "",
+  }))
+  Object.assign(view, { snapshot: state, pane: state.panes[2], connected: true, tabSignature: "" })
+  view.renderTabMenu()
+  const labels = view.tabMenu.children.map((item) => item.children[1].children[0].textContent)
+  assert.deepEqual(labels, ["1 · π - pi-mono", "2 · π - pi-mono", "3 · π - pi-mono"])
+  assert.ok(labels.every((label) => !label.includes("hc:")))
+})
+
 test("agent status requires an explicit state, an agent and a live connection", () => {
   for (const status of ["working", "blocked", "done"]) {
     const pane = { agent: "pi", agent_status: status }

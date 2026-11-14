@@ -762,6 +762,9 @@ button.active {
   font-weight: 500;
   line-height: 22px;
   color: var(--fg-strong);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .popover-hint {
@@ -1686,8 +1689,7 @@ button.active {
   height: 20px;
   display: block;
 }
-.popover-text,
-.popover-label {
+.popover-text {
   overflow-wrap: anywhere;
 }
 #list-menu,

@@ -1,6 +1,7 @@
 import { AlmaTunnel, type AlmaTunnelOptions } from "./alma.js"
 import { almaSnapshot, records } from "./alma-snapshot.js"
 import { AlmaState } from "./alma-state.js"
+import { isStaticHost } from "./static-host.js"
 import { type RemoteConfig, RemoteTunnel } from "./tunnel.js"
 
 export interface AgentSessionRef {
@@ -114,6 +115,11 @@ let localApi: boolean | null = null
 export async function hasLocalApi(): Promise<boolean> {
   if (localApi !== null) {
     return localApi
+  }
+  // The hosted build has no local agent, so there is no /api/state to probe.
+  if (isStaticHost()) {
+    localApi = false
+    return false
   }
   try {
     const response = await fetch("/api/state", {

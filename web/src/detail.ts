@@ -222,6 +222,7 @@ export class DetailScreen {
     if (snapshot === null) {
       return
     }
+    const numbers = paneNumbers(snapshot.panes)
     for (const workspace of snapshot.workspaces) {
       for (const tab of snapshot.tabs.filter((t) => t.workspace_id === workspace.workspace_id)) {
         for (const pane of snapshot.panes.filter((p) => p.tab_id === tab.tab_id)) {
@@ -235,8 +236,12 @@ export class DetailScreen {
           text.className = "popover-text"
           const label = document.createElement("span")
           label.className = "popover-label"
-          const title = pane.terminal_title_stripped || pane.title || pane.pane_id
-          label.textContent = `${tab.label || tab.tab_id} · ${title}`
+          // Use the same consecutive number as the list and header. A core
+          // tab has no friendly label, and its raw id (hc:<hash>/t1) must
+          // never leak into the menu.
+          const title = pane.terminal_title_stripped || pane.title || pane.label || pane.agent || "Terminal"
+          label.textContent = `${numbers.get(pane.pane_id) ?? ""} · ${title}`
+          item.title = label.textContent
           const hint = document.createElement("span")
           hint.className = "popover-hint"
           hint.textContent = agentStatusLabel(agentStatus(pane, this.connected))
