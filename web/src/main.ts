@@ -28,6 +28,8 @@ import { authStatus, signIn, signOut } from "./auth.js"
 import { DetailScreen } from "./detail.js"
 import { createAgentTerminal, type NewTabAgent, NewTerminalMenu } from "./new-terminal.js"
 import { forgetPairing, type Pairing, readPairing, readSavedPairing, savePairing } from "./pairing.js"
+import { PiHistoryBuffer, piHistoryKey } from "./pi-history.js"
+import { loadPiHistory } from "./pi-history-loader.js"
 import { restartAgent as runRestart } from "./restart.js"
 import { type ScannerHandle, startScanner } from "./scanner.js"
 import { renderSessionList } from "./session-list.js"
@@ -99,14 +101,14 @@ let authRequired = false
 let currentScreen: "login" | "list" | "detail" = "login"
 let stateRefreshNeeded = false
 
-const terminal = new TerminalView(terminalCanvas, (direction) => void scrollHistory(direction))
+const terminal = new TerminalView(terminalCanvas, scrollHistory)
 const terminalHistories = new Map<string, TerminalHistory>()
 initAppearance((theme) => void terminal.setTheme(theme))
 appendAppearanceControl(loginNote.parentElement ?? loginScreen)
 
 let snapshot: SessionSnapshot | null = null
 let selectedPaneId: string | null = null
-let pendingTerminal: object | null = null
+let pendingTerminal: { promise: Promise<void> } | null = null
 let activePairing: Pairing | null = null
 let pairingBusy = false
 let reconnectNeeded = false
@@ -290,14 +292,30 @@ const detail = new DetailScreen({
     void selectPane(paneId)
   },
   sendText: async (pane, text) => {
-    if (!desktopConnected || pairingBusy || !snapshot?.panes.some((entry) => entry.pane_id === pane.pane_id)) return
+    const generation = connectionGeneration
+    await selectedHistory(pane.pane_id).loading
+    if (
+      generation !== connectionGeneration ||
+      !desktopConnected ||
+      pairingBusy ||
+      !snapshot?.panes.some((entry) => entry.pane_id === pane.pane_id)
+    )
+      return
     const error = await sendText(pane.pane_id, text)
     if (error !== null) {
       setStatus(`send failed: ${error}`, true)
     }
   },
   sendKeys: async (pane, keys) => {
-    if (!desktopConnected || pairingBusy || !snapshot?.panes.some((entry) => entry.pane_id === pane.pane_id)) return
+    const generation = connectionGeneration
+    await selectedHistory(pane.pane_id).loading
+    if (
+      generation !== connectionGeneration ||
+      !desktopConnected ||
+      pairingBusy ||
+      !snapshot?.panes.some((entry) => entry.pane_id === pane.pane_id)
+    )
+      return
     const error = await sendKeys(pane.pane_id, keys)
     if (error !== null) {
       setStatus(`send failed: ${error}`, true)
@@ -305,6 +323,16 @@ const detail = new DetailScreen({
   },
   restartAgent: async (pane, continueAfter) => {
     if (!desktopConnected || pairingBusy || !snapshot?.panes.some((entry) => entry.pane_id === pane.pane_id)) return
+    const generation = connectionGeneration
+    await selectedHistory(pane.pane_id).loading
+    if (
+      generation !== connectionGeneration ||
+      !desktopConnected ||
+      pairingBusy ||
+      !snapshot?.panes.some((entry) => entry.pane_id === pane.pane_id)
+    )
+      return
+    terminalHistories.delete(`${connectionGeneration}:${pane.pane_id}`)
     await runRestart(pane, continueAfter, {
       sendKeys,
       startAgent,
@@ -402,27 +430,99 @@ function selectedHistory(paneId: string): TerminalHistory {
   return history
 }
 
-async function scrollHistory(direction: ScrollDirection): Promise<void> {
-  const pane = selectedPane()
-  if (!desktopConnected || pairingBusy || !terminalVisible() || pane === null) return
+function preloadHistory(pane: PaneRecord, history: TerminalHistory): void {
+  if (history.loading !== null) return
+  history.busy = true
   const generation = connectionGeneration
-  try {
-    const changed = await selectedHistory(pane.pane_id).move(direction, pane.agent, (text) =>
-      sendText(pane.pane_id, text),
-    )
-    if (changed && generation === connectionGeneration && selectedPaneId === pane.pane_id) await refreshTerminal()
-  } catch (error) {
-    setStatus((error as Error).message, true)
-  }
+  const connected = () =>
+    desktopConnected &&
+    !pairingBusy &&
+    generation === connectionGeneration &&
+    snapshot?.panes.some((entry) => entry.pane_id === pane.pane_id && entry.agent === "pi") === true
+  const current = () =>
+    connected() && selectedPaneId === pane.pane_id && terminalVisible() && selectedHistory(pane.pane_id) === history
+  const previousLines = history.pi?.lines ?? history.text?.split("\n").length ?? 0
+  const loading = loadPiHistory({
+    read: () => readPane(pane.pane_id, "recent_unwrapped", "ansi", history.lines),
+    send: (text) => sendText(pane.pane_id, text),
+    current,
+    connected,
+    limit: history.piLimit,
+  })
+    .then(async (result) => {
+      if (result === null || !current()) return
+      history.loaded = true
+      history.pi = result.buffer
+      history.text = result.latest.text
+      await terminal.setHistoryContent(
+        result.buffer.text,
+        pane.viewport_rows,
+        result.latest.cols ?? 0,
+        Math.max(0, result.buffer.lines - previousLines),
+      )
+    })
+    .catch((error) => {
+      if (current()) setStatus((error as Error).message, true)
+    })
+    .finally(() => {
+      if (history.loading === loading) history.loading = null
+      history.busy = false
+    })
+  history.loading = loading
 }
 
-async function refreshTerminal(): Promise<void> {
+function scrollHistory(direction: ScrollDirection): boolean {
+  const pane = selectedPane()
+  if (!desktopConnected || pairingBusy || !terminalVisible() || pane === null) return false
+  const history = selectedHistory(pane.pane_id)
+  if (history.busy) return false
+  if (history.pi !== null) {
+    if (direction > 0 || !history.pi.full) return false
+    history.piLimit *= 2
+    preloadHistory(pane, history)
+    return true
+  }
+  const generation = connectionGeneration
+  const before = history.text
+  const current = () =>
+    desktopConnected &&
+    !pairingBusy &&
+    generation === connectionGeneration &&
+    selectedPaneId === pane.pane_id &&
+    terminalVisible()
+  void history
+    .move(
+      direction,
+      pane.agent,
+      (text) => sendText(pane.pane_id, text),
+      async () => {
+        if (!current()) return true
+        await refreshTerminal(true)
+        return !current() || history.text !== before
+      },
+    )
+    .catch((error) => setStatus((error as Error).message, true))
+  return true
+}
+
+async function refreshTerminal(afterInput = false): Promise<void> {
   if (!desktopConnected || pairingBusy || !terminalVisible()) return
   const pane = selectedPane()
-  if (pane === null || pendingTerminal !== null) {
+  if (pane === null || selectedHistory(pane.pane_id).loading !== null) return
+  if (pendingTerminal !== null) {
+    if (afterInput) {
+      const generation = connectionGeneration
+      await pendingTerminal.promise
+      if (generation === connectionGeneration && selectedPaneId === pane.pane_id) await refreshTerminal(true)
+    }
     return
   }
-  const pending = {}
+  let complete = () => {}
+  const pending = {
+    promise: new Promise<void>((resolve) => {
+      complete = resolve
+    }),
+  }
   pendingTerminal = pending
   const generation = connectionGeneration
   try {
@@ -439,12 +539,26 @@ async function refreshTerminal(): Promise<void> {
       pane.pane_id === selectedPaneId &&
       terminalVisible()
     ) {
-      await terminal.setContent(read.text, read.vt ? (read.rows ?? pane.viewport_rows) : pane.viewport_rows, read.cols)
+      history.text = read.text
+      let content = read.text
+      if (pane.agent === "pi" && !read.vt && piHistoryKey(read.text) !== null) {
+        history.pi ??= new PiHistoryBuffer(read.text, history.piLimit)
+        history.pi.updateLatest(read.text)
+        content = history.pi.text
+      } else {
+        history.pi = null
+        history.loaded = false
+      }
+      await terminal.setContent(content, read.vt ? (read.rows ?? pane.viewport_rows) : pane.viewport_rows, read.cols)
+      if (pane.agent === "pi" && !read.vt && !history.loaded && piHistoryKey(read.text) !== null) {
+        preloadHistory(pane, history)
+      }
     }
   } catch (error) {
     if (pendingTerminal === pending && generation === connectionGeneration) connectionFailed(error)
   } finally {
     if (pendingTerminal === pending) pendingTerminal = null
+    complete()
   }
 }
 

@@ -1,3 +1,5 @@
+export const SCROLL_IDLE_MS = 120
+
 /** Hold expensive snapshot work until all fingers and native inertia have stopped. */
 export class TerminalScrollPause {
   timer: number | null = null
@@ -7,6 +9,14 @@ export class TerminalScrollPause {
     host: HTMLElement | null,
     private readonly idle: () => void,
   ) {
+    // A wheel gesture keeps running at a clamped boundary without scroll events.
+    host?.addEventListener(
+      "wheel",
+      (event) => {
+        if (!event.ctrlKey && event.deltaY !== 0 && Math.abs(event.deltaY) >= Math.abs(event.deltaX)) this.extend()
+      },
+      { passive: true },
+    )
     host?.addEventListener(
       "touchstart",
       (event) => {
@@ -39,7 +49,7 @@ export class TerminalScrollPause {
     this.timer = window.setTimeout(() => {
       this.timer = null
       this.idle()
-    }, 120)
+    }, SCROLL_IDLE_MS)
   }
 
   clear(): void {

@@ -28,7 +28,7 @@ export class TerminalView {
   private readonly surface: HTMLDivElement | null
   private readonly selection: TerminalSelection | null
   private readonly nativeText: boolean
-  private pendingContent: { text: string; rows: number; cols: number } | null = null
+  private pendingContent: { text: string; rows: number; cols: number; addedRows?: number } | null = null
   private readonly kernel = new TerminalKernel()
   private readonly painter = new TerminalPainter()
   private readonly viewport = new TerminalViewport()
@@ -69,7 +69,7 @@ export class TerminalView {
 
   constructor(
     canvas: HTMLCanvasElement,
-    onBoundary?: (direction: ScrollDirection) => void,
+    onBoundary?: (direction: ScrollDirection) => boolean | undefined,
     renderer: "text" | "canvas" = "text",
   ) {
     this.canvas = canvas
@@ -121,7 +121,7 @@ export class TerminalView {
             this.follow = false
             this.captureAnchor()
           }
-          onBoundary?.(direction)
+          return onBoundary?.(direction)
         },
       )
     }
@@ -141,17 +141,26 @@ export class TerminalView {
     const pending = this.pendingContent
     this.pendingContent = null
     if (pending !== null) {
-      void this.setContent(pending.text, pending.rows, pending.cols).then(() => this.resume())
+      void this.setContent(pending.text, pending.rows, pending.cols, pending.addedRows).then(() => this.resume())
     } else if (this.renderPending) {
       this.captureAnchor()
       this.render()
     }
   }
 
-  async setContent(text: string, paneRows: number, paneCols = 0): Promise<void> {
+  async setContent(text: string, paneRows: number, paneCols = 0, addedRows = 0): Promise<void> {
     if (this.paused) {
-      this.pendingContent = { text, rows: paneRows, cols: paneCols }
+      this.pendingContent = {
+        text,
+        rows: paneRows,
+        cols: paneCols,
+        addedRows: (this.pendingContent?.addedRows ?? 0) + addedRows,
+      }
       return
+    }
+    if (addedRows > 0) {
+      this.captureAnchor()
+      if (this.anchorSource !== null) this.anchorSource.row += addedRows
     }
     const changed = text !== this.text || paneRows !== this.contentRows || paneCols !== this.contentCols
     if (!changed && this.usingKernel) return
@@ -250,6 +259,10 @@ export class TerminalView {
     this.render(false)
   }
 
+  async setHistoryContent(text: string, paneRows: number, paneCols: number, addedRows: number): Promise<void> {
+    await this.setContent(text, paneRows, paneCols, addedRows)
+  }
+
   resize(): void {
     this.captureAnchor()
     this.render()
@@ -286,7 +299,8 @@ export class TerminalView {
     this.anchorSource = null
     const host = this.host
     if (host !== null) {
-      host.scrollTop = host.scrollHeight
+      const bottom = Math.max(0, host.scrollHeight - host.clientHeight)
+      if (Math.abs(host.scrollTop - bottom) > 0.5) host.scrollTop = bottom
     }
   }
 
@@ -388,7 +402,7 @@ export class TerminalView {
       this.programmaticTop = null
     }
     this.topRow = Math.round(host.scrollTop / this.rowHeight)
-    this.follow = !this.selection?.active() && this.topRow + this.visibleRows() >= this.laidOut.length - 1
+    this.follow = !this.selection?.active() && host.scrollHeight - host.clientHeight - host.scrollTop <= 0.5
     if (!restored && !this.follow) this.scrollPause.extend()
     if (this.nativeText || this.paintFrame !== null) return
     // Native scrolling owns the offset; paint its latest position once per frame.
@@ -468,7 +482,8 @@ export class TerminalView {
     if (host !== null) {
       if (this.follow) {
         // The newest line stays in sight while the reader stays at the bottom.
-        host.scrollTop = host.scrollHeight
+        const bottom = Math.max(0, host.scrollHeight - host.clientHeight)
+        if (Math.abs(host.scrollTop - bottom) > 0.5) host.scrollTop = bottom
         this.programmaticTop = host.scrollTop
         this.topRow = Math.max(0, this.laidOut.length - this.visibleRows())
       } else {

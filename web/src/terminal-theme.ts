@@ -64,9 +64,9 @@ function channels(color: string): number[] | null {
   return [1, 3, 5].map((offset) => Number.parseInt(color.slice(offset, offset + 2), 16))
 }
 
-function neutral(color: string): number[] | null {
+function neutral(color: string, tolerance = 12): number[] | null {
   const values = channels(color)
-  return values !== null && Math.max(...values) - Math.min(...values) <= 12 ? values : null
+  return values !== null && Math.max(...values) - Math.min(...values) <= tolerance ? values : null
 }
 
 function luminance(color: string): number {
@@ -117,7 +117,8 @@ export function cellColors(
   let foreground = style.fg || defaults.foreground
   let background = style.bg
   const fg = neutral(style.fg)
-  const bg = neutral(background)
+  // Message surfaces can carry a slight blue tint in the desktop light theme.
+  const bg = neutral(background, 24)
   // Snapshots can bake a desktop app's light theme into RGB cells. Adapt neutral
   // text and surfaces locally, but preserve coloured highlights and logo pairs.
   const colorOnBlack = fg === null && style.fg !== "" && style.bg === "#000000"
