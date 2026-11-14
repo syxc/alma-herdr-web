@@ -28,7 +28,7 @@ import { authStatus, signIn, signOut } from "./auth.js"
 import { DetailScreen } from "./detail.js"
 import { createAgentTerminal, type NewTabAgent, NewTerminalMenu } from "./new-terminal.js"
 import { forgetPairing, type Pairing, readPairing, readSavedPairing, savePairing } from "./pairing.js"
-import { PiHistoryBuffer, piHistoryKey } from "./pi-history.js"
+import { PiHistoryBuffer } from "./pi-history.js"
 import { loadPiHistory } from "./pi-history-loader.js"
 import { restartAgent as runRestart } from "./restart.js"
 import { type ScannerHandle, startScanner } from "./scanner.js"
@@ -541,16 +541,15 @@ async function refreshTerminal(afterInput = false): Promise<void> {
     ) {
       history.text = read.text
       let content = read.text
-      if (pane.agent === "pi" && !read.vt && piHistoryKey(read.text) !== null) {
-        history.pi ??= new PiHistoryBuffer(read.text, history.piLimit)
-        history.pi.updateLatest(read.text)
-        content = history.pi.text
-      } else {
-        history.pi = null
-        history.loaded = false
-      }
+      if (pane.agent === "pi" && !read.vt) {
+        if (history.pi === null) history.pi = new PiHistoryBuffer(read.text, history.piLimit)
+        else history.pi.updateLatest(read.text)
+        if (!history.pi.supported) history.pi = null
+      } else history.pi = null
+      if (history.pi !== null) content = history.pi.text
+      else history.loaded = false
       await terminal.setContent(content, read.vt ? (read.rows ?? pane.viewport_rows) : pane.viewport_rows, read.cols)
-      if (pane.agent === "pi" && !read.vt && !history.loaded && piHistoryKey(read.text) !== null) {
+      if (history.pi !== null && !history.loaded) {
         preloadHistory(pane, history)
       }
     }

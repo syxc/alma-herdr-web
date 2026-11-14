@@ -220,7 +220,7 @@ export class TerminalSelection {
         if (position.start !== last) mapping += `${column}:${position.start};`
         last = position.end
       }
-      const key = `${cells.map((cell) => cell.ch || "\0").join("")}\u0001${mapping}${last}:${metrics.cellWidth * metrics.scale}:${appearance}`
+      const key = `${cells.map((cell) => cell.ch || "\0").join("")}\u0001${mapping}${last}:${appearance}`
       if (!metricsChanged && prior?.key === key) {
         prior.cells = cells
         prior.start = start
