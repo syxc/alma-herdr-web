@@ -938,7 +938,7 @@ button.active {
   touch-action: pan-x;
 }
 .key-symbol {
-  font-size: 20px;
+  font-size: 17px;
 }
 .key-chip:active:enabled,
 .key-chip[aria-pressed="true"] {
