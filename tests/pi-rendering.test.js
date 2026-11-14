@@ -120,6 +120,14 @@ test("inserted word separators inherit a continuous message background", () => {
   assert.ok(grid.cells.every((row) => row.every((cell) => cell.style.bg === "#213b49")))
 })
 
+test("joining list continuations retains independently colored spaces", () => {
+  const text = "⏺ alpha beta gamma delta epsilon\x1b[41m \x1b[0m\n  zeta eta theta"
+  const source = parseAnsi(text)
+  const background = source.cells[0].at(-1).style.bg
+  const result = layoutGrid(source, 24)
+  assert.equal(result.cells.flat().filter((cell) => cell.style.bg === background).length, 1)
+})
+
 test("joining background-filled Chinese rows does not turn their padding into word gaps", () => {
   const first = "这是一段合成的中文说明用于检查窄屏连续正文的背景填充与换行"
   const second = "下一行继续同一段正文并保留实际的文字顺序"

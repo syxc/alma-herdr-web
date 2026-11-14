@@ -228,13 +228,24 @@ export function layoutGrid(grid: Grid, width: number): Grid {
       continuesProse(previous, row)
     previous = row
     if (continues) {
-      // Screen-wide background padding must not become spaces inside joined prose.
+      const rest = row.cells.slice(row.indent)
+      let glyph = current.length - 1
+      while (glyph >= 0 && !current[glyph]!.ch.trim()) glyph--
+      const fill = current[glyph]?.style.bg
+      // Only continuous message fill is decoration; isolated styled blanks are content.
       while (current.length > 0) {
         const last = current[current.length - 1]!
-        if (last.ch !== " " || !last.style.bg || last.style.underline || last.style.reverse) break
+        if (
+          last.ch !== " " ||
+          !last.style.bg ||
+          last.style.bg !== fill ||
+          last.style.bg !== rest[0]?.style.bg ||
+          last.style.underline ||
+          last.style.reverse
+        )
+          break
         current.pop()
       }
-      const rest = row.cells.slice(row.indent)
       const left = current[previousGlyph(current, current.length)]?.ch ?? ""
       const right = rest[0]?.ch ?? ""
       // CJK source rows have no word separator; do not invent spaces in a sentence.
