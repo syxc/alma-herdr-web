@@ -47,6 +47,8 @@ async function fixture(t, paintParts = [Buffer.from("\x1b[31mcolor\x1b[0m\x1b[?9
   let terminals = [terminal("t1"), terminal("vps/t1", { status: { app: "claude", state: "working" } })]
   let machines = [{ name: "vps", state: "connected" }]
   let channelId = 0
+  let attachedTerminal = null
+  let onInput = () => {}
   const server = createServer((socket) => {
     sockets.add(socket)
     socket.on("error", () => {})
@@ -69,7 +71,10 @@ async function fixture(t, paintParts = [Buffer.from("\x1b[31mcolor\x1b[0m\x1b[?9
       } else if (message.method === "terminal.attach") {
         const channel = ++channelId
         channels.set(channel, message.params.terminal)
-        result = { channel }
+        result = {
+          channel,
+          terminal: attachedTerminal ?? terminals.find((entry) => entry.address === message.params.terminal),
+        }
       } else if (message.method === "terminal.read") result = { text: "plain output", complete: false }
       const response = Buffer.from(JSON.stringify({ jsonrpc: "2.0", id: message.id, result }))
       if (message.method === "hello" && !framed) {
@@ -110,6 +115,7 @@ async function fixture(t, paintParts = [Buffer.from("\x1b[31mcolor\x1b[0m\x1b[?9
         if (channel === 0 && kind === 0) request(JSON.parse(payload))
         else if (kind === 0) {
           input.push({ terminal: channels.get(channel), payload })
+          onInput(channels.get(channel), payload)
           const credit = Buffer.alloc(4)
           credit.writeUInt32LE(payload.length)
           socket.write(frame(channel, 1, credit))
@@ -131,6 +137,12 @@ async function fixture(t, paintParts = [Buffer.from("\x1b[31mcolor\x1b[0m\x1b[?9
     sockets,
     root,
     socketPath: path,
+    setAttachTerminal: (value) => {
+      attachedTerminal = value
+    },
+    setInputHandler: (handler) => {
+      onInput = handler
+    },
     setMachines: (value) => {
       machines = value
     },
@@ -225,6 +237,56 @@ test("raw text and keys use framed DATA without automatic Enter; closing streams
   assert.equal(requests.at(-1).method, "terminal.send")
 })
 
+test("native paint uses the dimensions returned with its attach, after a desktop resize", async (t) => {
+  const { client, setAttachTerminal } = await fixture(t)
+  setAttachTerminal(terminal("t1", { cols: 20, rows: 6 }))
+  const { read } = await client.request("pane.read", { pane_id: "t1", format: "ansi" })
+  assert.equal(read.cols, 20)
+  assert.equal(read.rows, 6)
+  assert.equal(read.vt, true)
+})
+
+test("failed core launches keep their shell and cannot claim startup or label an agent", async (t) => {
+  const { client, input, requests } = await fixture(t, [Buffer.from("codex: command not found\r\n\x1b[?9001l")])
+  await assert.rejects(client.request("agent.start", { pane_id: "t1", kind: "codex", name: "builder", args: [] }), {
+    code: "start_unknown",
+  })
+  assert.equal(input.length, 1, "an unconfirmed launch must never be repeated")
+  assert.equal(
+    requests.some((entry) => entry.method === "terminal.label"),
+    false,
+  )
+  assert.equal((await client.request("session.snapshot")).snapshot.panes[0].pane_id, "t1")
+})
+
+test("a prompt hook or stale status cannot confirm an agent launch", async (t) => {
+  const { client, setTerminals, setInputHandler } = await fixture(t)
+  setTerminals([terminal("t1", { status: { app: "codex", state: "idle" } })])
+  setInputHandler(() =>
+    setTerminals([
+      terminal("t1", {
+        foreground: { pid: 43, name: "git", argv: ["git", "status"] },
+        status: { app: "codex", state: "idle" },
+      }),
+    ]),
+  )
+  await assert.rejects(client.request("agent.start", { pane_id: "t1", kind: "codex", args: [] }), {
+    code: "start_unknown",
+  })
+})
+
+test("Node agent entrypoints confirm startup without relying on the node process name", async (t) => {
+  const { client, setTerminals, setInputHandler } = await fixture(t)
+  setInputHandler(() =>
+    setTerminals([
+      terminal("t1", {
+        foreground: { pid: 43, name: "node", argv: ["node", "/opt/node_modules/pi-coding-agent/dist/cli.js"] },
+      }),
+    ]),
+  )
+  assert.equal((await client.request("agent.start", { pane_id: "t1", kind: "pi", args: [] })).pane_id, "t1")
+})
+
 test("large raw input obeys channel credit without truncation", async (t) => {
   const { client, input } = await fixture(t)
   const value = "x".repeat(600000)
@@ -234,8 +296,10 @@ test("large raw input obeys channel credit without truncation", async (t) => {
 })
 
 test("agent start safely quotes supported commands and refuses an existing program", async (t) => {
-  const { client, input, setTerminals, requests } = await fixture(t)
+  const { client, input, setTerminals, requests, setInputHandler } = await fixture(t)
   for (const kind of ["claude", "codex", "pi"]) {
+    setTerminals([terminal("t1")])
+    setInputHandler(() => setTerminals([terminal("t1", { foreground: { name: kind, pid: 43 } })]))
     await client.request("agent.start", { pane_id: "t1", kind, name: "builder", args: ["a'b", "$(echo unsafe)"] })
     await client.request("session.snapshot")
     const command = input.at(-1).payload.toString()
@@ -288,7 +352,10 @@ test("real isolated hc supports create, ANSI paint, exact input and agent startu
   await mkdir(bin)
   for (const kind of ["claude", "codex", "pi"]) {
     const path = join(bin, kind)
-    await writeFile(path, "#!/bin/sh\nprintf 'core_agent:%s\\n' \"$@\"\n")
+    await writeFile(
+      path,
+      "#!/bin/sh\nprintf 'core_agent:%s\\n' \"$@\"\ntrap 'exit 0' INT TERM\nwhile read -r line; do :; done\n",
+    )
     await chmod(path, 0o700)
   }
   const env = {
@@ -338,6 +405,12 @@ test("real isolated hc supports create, ANSI paint, exact input and agent startu
         (entry) => entry.pane_id === pane.pane_id,
       )
       assert.notEqual(running.agent_status, "exited")
+      await client.request("pane.send_keys", { pane_id: pane.pane_id, keys: ["ctrl+c"] })
+      for (let attempt = 0; attempt < 50; attempt++) {
+        const current = await client.transport.request("terminal.get", { terminal: pane.pane_id })
+        if (current.foreground?.pid === current.pid) break
+        await new Promise((done) => setTimeout(done, 20))
+      }
       const survived = join(root, `shell-survived-${kind}`)
       await client.request("pane.send_text", { pane_id: pane.pane_id, text: `printf shell_survived > '${survived}'` })
       await client.request("pane.send_keys", { pane_id: pane.pane_id, keys: ["enter"] })
@@ -376,8 +449,9 @@ test("ANSI paint spans DATA frames, credit-sized chunks and UTF-8 boundaries", a
 })
 
 test("fish start quotes apostrophes and backslashes while keeping its shell", async (t) => {
-  const { client, input, setTerminals } = await fixture(t)
+  const { client, input, setTerminals, setInputHandler } = await fixture(t)
   setTerminals([terminal("t1", { argv: ["/usr/bin/fish"], foreground: { pid: 42, name: "fish" } })])
+  setInputHandler(() => setTerminals([terminal("t1", { foreground: { name: "pi", pid: 43 } })]))
   await client.request("agent.start", { pane_id: "t1", kind: "pi", args: ["a'b", "a\\b", "$(echo unsafe)"] })
   await client.request("session.snapshot")
   assert.equal(input[0].payload.toString(), "'pi' 'a\\'b' 'a\\\\b' '$(echo unsafe)'\r")

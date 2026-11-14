@@ -91,9 +91,8 @@ try {
     const title = doc.querySelector("#screen-list .app-bar-center").getBoundingClientRect()
     const more = el("list-more").getBoundingClientRect()
     check(
-      Math.abs(title.left - (visible("list-back") ? el("list-back").getBoundingClientRect().right + 10 : 19)) < 0.5 &&
-        title.right <= more.left,
-      `${mode}: title aligns left and leaves room for the actions`,
+      Math.abs(title.left + title.width / 2 - frame.contentWindow.innerWidth / 2) < 0.5 && title.right <= more.left,
+      `${mode}: title stays centered and leaves room for the actions`,
     )
   }
   if (mode === "static") {
@@ -101,6 +100,7 @@ try {
     check(visible("pair-scan"), "Static site opens directly to the pairing options")
     check(!menuItem("Sign out"), "Static site has no sign-out entry")
     check(!visible("list-back") && !visible("remote-banner"), "Unpaired start has no redundant back control or banner")
+    check(el("connection").className === "pill", "Unpaired state uses neutral connection text")
     check(
       el("list-heading").textContent === "Alma herdr" && el("pair-title").textContent === "Connect to your herdr",
       "Unpaired start names herdr as the connection target",
@@ -197,10 +197,29 @@ try {
     await loaded()
     await ready()
     await until(() => el("connection").classList.contains("online"))
-    check(true, "Reload restores the saved encrypted pairing without login")
+    check(
+      visible("screen-list") && !visible("pair-panel") && !visible("list-back"),
+      "Reload restores the connected list without the home or a back arrow",
+    )
+    doc.querySelector(".session-row").click()
+    await until(() => visible("screen-detail"))
+    check(!el("detail-back"), "Connected terminal has no back arrow")
+    frame.contentWindow.location.reload()
+    await loaded()
+    await ready()
+    await until(() => visible("screen-detail") && el("connection").classList.contains("online"))
+    check(!visible("pair-panel"), "Reload restores the selected encrypted terminal without the home")
+    el("detail-more").click()
+    ;[...el("action-menu").querySelectorAll("button")]
+      .find((item) => item.querySelector(".popover-label")?.textContent === "All terminals")
+      .click()
     menuItem("Forget paired herdr").click()
     await until(() => visible("pair-panel"))
     check(sessionStorage.getItem("alma-herdr-web:pairing") === null, "Forget disconnects and removes the saved pairing")
+    check(
+      el("connection").className === "pill" && el("connection").textContent === "not paired",
+      "Forget restores neutral unpaired text rather than an error",
+    )
     check(
       el("screen-list").classList.contains("pairing-home") && !visible("list-back") && !visible("remote-banner"),
       "Forget returns to the clean connection welcome",
@@ -211,19 +230,39 @@ try {
       Boolean(menuItem("Sign out")) === (mode === "protected"),
       `${mode}: sign-out visibility follows configured passphrase`,
     )
-    check(visible("list-back") === (mode === "protected"), `${mode}: back exit only exists with a passphrase`)
+    check(!visible("list-back"), `${mode}: the terminal list has no implicit sign-out button`)
+    const beforeBack = (await stats()).logouts
+    menuItem("Join a remote session").click()
+    check(visible("pair-panel") && visible("list-back"), `${mode}: pairing exposes a return to the terminal list`)
+    el("list-back").click()
+    check(
+      !visible("pair-panel") &&
+        !visible("list-back") &&
+        !visible("screen-login") &&
+        (await stats()).logouts === beforeBack,
+      `${mode}: returning from pairing keeps desktop access`,
+    )
     if (visible("list-menu")) el("list-more").click()
     doc.querySelector(".session-row").click()
     await until(() => doc.querySelector(".terminal-text")?.textContent.includes("auth-check terminal output"))
     check(true, `${mode}: opening a terminal still reads its output`)
     await until(async () => (await stats()).connections > 0)
     check(true, `${mode}: local event WebSocket connects`)
-    el("detail-back").click()
+    check(!el("detail-back"), `${mode}: connected terminal has no back arrow`)
     frame.contentWindow.location.reload()
     await loaded()
     await ready()
     await until(() => doc.querySelector(".session-row"))
-    check(true, `${mode}: reload keeps desktop access`)
+    await until(() => visible("screen-detail"))
+    check(true, `${mode}: reload restores the selected terminal and desktop access`)
+    el("detail-more").click()
+    ;[...el("action-menu").querySelectorAll("button")]
+      .find((item) => item.querySelector(".popover-label")?.textContent === "All terminals")
+      .click()
+    check(
+      visible("screen-list") && !visible("list-back"),
+      `${mode}: All terminals opens the list without leaving the connection`,
+    )
     if (mode === "protected") {
       await post("/check/expire")
       doc.dispatchEvent(new Event("visibilitychange"))
@@ -237,9 +276,9 @@ try {
       await until(async () => (await stats()).connections === 0)
       check(true, "Sign out closes the local event stream")
       await unlock()
-      el("list-back").click()
+      menuItem("Sign out").click()
       await until(() => visible("screen-login"))
-      check((await stats()).logouts === initialLogouts + 2, "Back exit also revokes desktop access")
+      check((await stats()).logouts === initialLogouts + 2, "Explicit sign out remains available after unlocking again")
     } else {
       el("list-back").click()
       check(

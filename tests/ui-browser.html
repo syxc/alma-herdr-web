@@ -102,6 +102,9 @@
       `<button class="popover-item"><span class="popover-glyph">✓</span><span class="popover-text"><span class="popover-label">Wrap to Phone</span><span class="popover-hint">Keep normal-size text on a narrow screen</span></span></button><button class="popover-item" disabled><span class="popover-text"><span class="popover-label">Restart &amp; Continue</span><span class="popover-hint">No resumable session</span></span></button><div class="popover-sep"></div>`
     appendAppearanceControl(el(id))
   }
+  for (const id of ["list-back", "list-new", "tab-switch", "tree-toggle", "detail-status", "detail-status-separator"])
+    el(id).classList.remove("hidden")
+  el("tab-number-static").classList.add("hidden")
   el("detail-status").textContent = "working"
   el("detail-title").textContent = "A long terminal title that must fit in the header"
   el("remote-banner").textContent = "Encrypted session with an isolated preview desktop"
@@ -157,7 +160,7 @@
         sendKeys: async () => {},
         restartAgent: async () => {},
         toggleTree() {},
-        back() {},
+        showList() {},
         status() {},
       })
       detail.update(snapshot, pane)
@@ -186,6 +189,54 @@
     }
     fitPreview.width = "1440"
     await load()
+    {
+      const { detail, snapshot, pane } = fitPreview.contentWindow.fitFixture
+      const childDoc = fitPreview.contentDocument
+      const byId = (id) => childDoc.getElementById(id)
+      check(
+        byId("tab-switch").classList.contains("hidden") &&
+          byId("tree-toggle").classList.contains("hidden") &&
+          !byId("tab-number-static").classList.contains("hidden") &&
+          byId("detail-dot").classList.contains("hidden"),
+        "A single terminal has a plain number and no redundant switcher, tree or inferred status",
+      )
+      const agentPane = { ...pane, agent: "pi", agent_status: "blocked" }
+      const multi = { ...snapshot, panes: [agentPane, { ...agentPane, pane_id: "second-pane" }] }
+      detail.update(multi, agentPane, true)
+      check(byId("detail-status").textContent === "Needs input", "Explicit blocked status uses the verified label")
+      byId("tab-switch").click()
+      const firstTab = byId("tab-menu").querySelector("button")
+      detail.update(multi, agentPane, true)
+      check(
+        byId("tab-switch").getAttribute("aria-expanded") === "true" && firstTab.isConnected,
+        "The terminal switcher reports its state and polling preserves its items",
+      )
+      byId("detail-more").click()
+      check(
+        byId("tab-menu").classList.contains("hidden") &&
+          byId("tab-switch").getAttribute("aria-expanded") === "false" &&
+          byId("detail-more").getAttribute("aria-expanded") === "true",
+        "Detail menus are mutually exclusive and expose their expanded state",
+      )
+      detail.update(multi, agentPane, false)
+      check(
+        byId("command-input").disabled &&
+          byId("tab-switch").disabled &&
+          byId("detail-dot").classList.contains("hidden") &&
+          !byId("action-menu").textContent.includes("Restart"),
+        "Disconnect removes agent actions and status while disabling input and remote switching",
+      )
+      detail.closeMenus()
+      check(byId("detail-more").getAttribute("aria-expanded") === "false", "Closing menus resets aria-expanded")
+      detail.update({ ...snapshot, panes: [] }, null, true)
+      check(
+        byId("tab-switch").classList.contains("hidden") &&
+          byId("tree-toggle").classList.contains("hidden") &&
+          byId("command-input").disabled,
+        "Removing the last pane removes its navigation actions and disables input",
+      )
+      detail.update(snapshot, pane, true)
+    }
     const labels = { wrap: "Wrap to Phone", original: "Original Width", shrink: "Shrink to Fit" }
     const evidence = []
     for (const width of [320, 390, 768, 1024, 1440]) {
@@ -271,18 +322,67 @@
   }
   try {
     for (const theme of ["dark", "light"]) {
-      for (const width of [320, 390, 1024]) {
+      show(theme, 390, "detail")
+      const pill = el("connection")
+      const originalClass = pill.className
+      const channels = (color) => {
+        const values = color
+          .match(/[\d.]+/g)
+          .slice(0, 3)
+          .map(Number)
+        return color.startsWith("color(") ? values : values.map((value) => value / 255)
+      }
+      const luminance = (values) =>
+        values
+          .map((value) => (value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4))
+          .reduce((sum, value, index) => sum + value * [0.2126, 0.7152, 0.0722][index], 0)
+      const background = luminance(channels(style(el("sidebar")).backgroundColor))
+      for (const state of ["online", "connecting", "offline", ""]) {
+        pill.className = `pill ${state}`
+        const color = channels(style(pill).color)
+        const foreground = luminance(color)
+        check(
+          (Math.max(background, foreground) + 0.05) / (Math.min(background, foreground) + 0.05) >= 4.5,
+          `${theme}: ${state || "unpaired"} connection text has readable contrast`,
+        )
+        check(
+          state === "online"
+            ? color[1] > color[0] && color[1] > color[2]
+            : state === "connecting"
+              ? color[0] > color[1] && color[1] > color[2]
+              : state === "offline"
+                ? color[0] > color[1] && color[0] > color[2]
+                : style(pill).color === style(doc.documentElement).getPropertyValue("--fg-muted").trim() ||
+                  style(pill).color ===
+                    (() => {
+                      const sample = doc.createElement("span")
+                      sample.style.color = "var(--fg-muted)"
+                      doc.body.append(sample)
+                      const value = style(sample).color
+                      sample.remove()
+                      return value
+                    })(),
+          `${theme}: ${state || "unpaired"} connection text uses its semantic color`,
+        )
+      }
+      pill.className = originalClass
+    }
+    for (const theme of ["dark", "light"]) {
+      for (const width of [320, 390, 768, 1024]) {
         for (const view of ["list", "detail", "login"]) {
           show(theme, width, view)
           await frame()
           check(doc.documentElement.scrollWidth <= width, `${theme} ${width}px ${view}: no page overflow`)
           if (view === "login") continue
           const prefix = view === "detail" ? "detail" : "list"
-          const back = el(`${prefix}-back`)
+          const back = el(view === "detail" ? "tree-toggle" : "list-back")
           const more = el(`${prefix}-more`)
           const header = back.closest("header").getBoundingClientRect()
           check(
-            back.offsetWidth === 50 && back.offsetHeight === 50 && more.offsetWidth === 60 && more.offsetHeight === 46,
+            back.offsetWidth === 50 &&
+              back.offsetHeight === 50 &&
+              more.offsetWidth === (width <= 430 ? 44 : 60) &&
+              more.offsetHeight === 46,
             `${theme} ${width}px ${view}: original header touch targets`,
           )
           check(
@@ -312,15 +412,16 @@
             `${theme} ${width}px ${view}: fixed header height and common action centerline`,
           )
           const positionKey = `${theme}:${width}`
-          if (view === "list") headerPositions.set(positionKey, { top: header.top, centers })
+          if (view === "list")
+            headerPositions.set(positionKey, { top: header.top, right: el("list-new").getBoundingClientRect().right })
           else {
             const previous = headerPositions.get(positionKey)
             check(
               previous.top === header.top &&
-                centers.every((point, index) =>
-                  point.every((value, axis) => Math.abs(value - previous.centers[index][axis]) < 0.01),
-                ),
-              `${theme} ${width}px: list-to-detail header action coordinates remain identical`,
+                previous.right === more.getBoundingClientRect().right &&
+                back.getBoundingClientRect().right <= el("tab-switch").getBoundingClientRect().left &&
+                !el("detail-back"),
+              `${theme} ${width}px: sidebar control stays left, More stays right and no back arrow remains`,
             )
           }
           if (view === "list") {
@@ -344,20 +445,41 @@
           }
           const center = back.closest("header").querySelector(".app-bar-center").getBoundingClientRect()
           const actions = back.closest("header").querySelector(".app-bar-right, .pill-group").getBoundingClientRect()
-          if (view === "list") {
-            const title = doc.querySelector("#screen-list .app-bar-title").getBoundingClientRect()
-            check(
-              Math.abs(title.left - center.left) < 0.5,
-              `${theme} ${width}px list: title and adjacent symbols align left`,
-            )
-            back.classList.add("hidden")
-            const aligned = doc.querySelector("#screen-list .app-bar-title").getBoundingClientRect()
-            check(
-              Math.abs(aligned.left - header.left - 19) < 0.5 && aligned.right <= more.getBoundingClientRect().left,
-              `${theme} ${width}px list: no-exit title starts at the left inset without overlapping actions`,
-            )
-            back.classList.remove("hidden")
+          for (const leftVisible of [true, false]) {
+            for (const secondaryVisible of [true, false]) {
+              back.classList.toggle("hidden", !leftVisible)
+              if (view === "list") el("list-new").classList.toggle("hidden", !secondaryVisible)
+              else {
+                el("tab-switch").classList.toggle("hidden", !secondaryVisible)
+                el("tab-number-static").classList.toggle("hidden", secondaryVisible)
+              }
+              const group = back.closest("header").querySelector(".app-bar-center")
+              const title = (
+                view === "list" ? el("list-heading") : group.querySelector(".app-bar-sub")
+              ).getBoundingClientRect()
+              const groupBox = group.getBoundingClientRect()
+              const content = [...group.children]
+                .filter((node) => node.getClientRects().length > 0)
+                .map((node) => node.getBoundingClientRect())
+              const contentTop = Math.min(...content.map((box) => box.top))
+              const contentBottom = Math.max(...content.map((box) => box.bottom))
+              const rightEdge = back
+                .closest("header")
+                .querySelector(".app-bar-right, .pill-group")
+                .getBoundingClientRect().left
+              check(
+                Math.abs(title.left + title.width / 2 - header.left - header.width / 2) < 0.5 &&
+                  Math.abs((contentTop + contentBottom) / 2 - header.top - header.height / 2) < 0.5 &&
+                  groupBox.left >= (leftVisible ? back.getBoundingClientRect().right : header.left) &&
+                  groupBox.right <= rightEdge,
+                `${theme} ${width}px ${view}: title stays centered with left=${leftVisible}, secondary=${secondaryVisible}`,
+              )
+            }
           }
+          back.classList.remove("hidden")
+          el("list-new").classList.remove("hidden")
+          el("tab-switch").classList.remove("hidden")
+          el("tab-number-static").classList.add("hidden")
           check(
             center.left >= back.getBoundingClientRect().right && center.right <= actions.left,
             `${theme} ${width}px ${view}: header text does not overlap actions`,
@@ -556,10 +678,23 @@
         { tab_id: "t3", workspace_id: "w2", label: "A long tab label that must fit the sidebar", agent_status: "idle" },
       ],
       panes: [
-        { pane_id: "p1", tab_id: "t1", title: "wB:p1", agent_status: "idle" },
-        { pane_id: "p2", tab_id: "t1", terminal_title_stripped: "almaprobe echo", agent_status: "working" },
-        { pane_id: "p3", tab_id: "t2", title: "wB:p3", agent_status: "blocked" },
-        { pane_id: "p4", tab_id: "t3", title: "A very long pane title that must be truncated", agent_status: "idle" },
+        { pane_id: "p1", tab_id: "t1", workspace_id: "w1", title: "wB:p1", agent_status: "idle" },
+        {
+          pane_id: "p2",
+          tab_id: "t1",
+          workspace_id: "w1",
+          agent: "pi",
+          terminal_title_stripped: "almaprobe echo",
+          agent_status: "working",
+        },
+        { pane_id: "p3", tab_id: "t2", workspace_id: "w1", agent: "pi", title: "wB:p3", agent_status: "blocked" },
+        {
+          pane_id: "p4",
+          tab_id: "t3",
+          workspace_id: "w2",
+          title: "A very long pane title that must be truncated",
+          agent_status: "idle",
+        },
       ],
     }
     const picks = []
@@ -625,7 +760,7 @@
     check(
       chosen.getAttribute("aria-current") === "true" &&
         chosen.classList.contains("selected") &&
-        chosen.getAttribute("aria-label").includes("working") &&
+        chosen.getAttribute("aria-label").includes("Working") &&
         chosen.querySelector(".dot").classList.contains("working"),
       "Workspace tree preserves the selection and status with accessible labels",
     )
@@ -640,7 +775,7 @@
       "Workspace, tab and pane buttons each invoke only their original selection action",
     )
     for (const theme of ["dark", "light"]) {
-      for (const width of [320, 390, 1024]) {
+      for (const width of [320, 390, 768, 1024]) {
         show(theme, width, "detail")
         el("sidebar").classList.add("open")
         await frame()
@@ -770,7 +905,7 @@
       "Only the supported New Tab menu remains; desktop workspace creation has no Web entry",
     )
     show("dark", 390, "detail")
-    el("detail-back").focus()
+    el("tree-toggle").focus()
     await checkFitModes()
     document.title = "PASS: UI details"
     lines.push("ALL CHECKS PASSED")

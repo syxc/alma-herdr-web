@@ -304,6 +304,8 @@ export class TerminalInput {
    * The keys of the screen, which is the input surface of a desktop.
    */
   private onCanvasKeyDown(event: KeyboardEvent): void {
+    // Local page navigation must retain a copy selection for the boundary handler.
+    if (event.key === "PageUp" || event.key === "PageDown") return
     const selection = terminalSelection(this.canvas)
     const command = event.ctrlKey || event.metaKey
     if (selection !== null && command && event.key.toLowerCase() === "c") return

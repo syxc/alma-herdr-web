@@ -195,6 +195,20 @@ test("a restart that keeps failing says so", async () => {
   assert.equal(last[1], true)
 })
 
+test("an unconfirmed launch is never retried or followed by a resume prompt", async () => {
+  const calls = recorder()
+  calls.startAgent = async (...args) => {
+    calls.calls.push(["startAgent", ...args])
+    return { error: "inspect the terminal before retrying", code: "start_unknown" }
+  }
+  await restartAgent(agentPane("codex", "id", "session-2"), true, calls)
+  assert.deepEqual(
+    calls.calls.map((call) => call[0]),
+    ["sendKeys", "startAgent"],
+  )
+  assert.deepEqual(calls.lines.at(-1), ["restart failed: inspect the terminal before retrying", true])
+})
+
 test("a restart without a session only starts the agent", async () => {
   const calls = recorder()
   await restartAgent(pane({ agent: "claude" }), true, calls)

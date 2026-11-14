@@ -51,6 +51,7 @@ function namespace(value: unknown, identity = false): unknown {
 /** Combines running TUI and core sessions using Alma's hc: identity namespace. */
 export class AutoClient {
   private readonly sources: Partial<Record<Backend, Source>> = {}
+  private readonly socketPaths: Partial<Record<Backend, string>> = {}
   private readonly handlers: HerdrEventHandler[] = []
   private subscriptions: HerdrSubscription[] | null = null
   private pendingSnapshot: Promise<Json> | null = null
@@ -116,7 +117,9 @@ export class AutoClient {
     }
     let paths: string[]
     try {
-      paths = backend === "tui" ? this.options.tuiSockets() : this.options.coreSockets()
+      // Pane identities belong to their first established source, even during an outage.
+      const pinned = this.socketPaths[backend]
+      paths = pinned ? [pinned] : backend === "tui" ? this.options.tuiSockets() : this.options.coreSockets()
     } catch {
       return null
     }
@@ -136,6 +139,7 @@ export class AutoClient {
           return null
         }
         this.sources[backend] = { client, socketPath, snapshot }
+        this.socketPaths[backend] = socketPath
         this.applySubscriptions(backend)
         return result
       } catch {

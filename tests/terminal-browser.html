@@ -64,9 +64,9 @@ try {
   await view.kernel.load()
   let paints = 0
   const render = view.render.bind(view)
-  view.render = () => {
+  view.render = (...args) => {
     paints += 1
-    render()
+    render(...args)
   }
   view.setMode("original")
   await view.setContent(`\x1b[48;2;239;239;239m${" ".repeat(50)}\x1b[0m`, 10)
@@ -225,8 +225,8 @@ try {
     "Long snapshot paints text at the bottom, not just a blank surface",
   )
   check(
-    canvas.height <= Math.ceil(host.clientHeight * devicePixelRatio),
-    "Long snapshot bounds the backing store to the viewport",
+    canvas.height <= Math.ceil(host.clientHeight * devicePixelRatio * 3),
+    "Long snapshot bounds the backing store to three viewports",
   )
   check(
     Math.abs(host.scrollHeight - host.clientHeight - host.scrollTop) < 1,
@@ -320,6 +320,77 @@ try {
   document.getSelection().removeAllRanges()
   await pause(40)
   check(layer.textContent.includes("resume latest"), "Clearing native selection resumes the latest queued snapshot")
+  view.clearSelection()
+  host.style.width = "390px"
+  host.style.height = "190px"
+  for (const mode of ["wrap", "original", "shrink"]) {
+    view.setMode(mode)
+    for (const theme of ["dark", "light"]) {
+      await view.setTheme(theme)
+      const rows = Array.from({ length: 8 }, (_, index) => `pixel row ${index}: ${"words 中文 ".repeat(9)}`)
+      view.follow = false
+      host.scrollTop = 0
+      await pause(180)
+      await view.setContent(rows.join("\n"), 24)
+      rows[3] = "\x1b[44;4m👩‍💻 中文 e\u0301\x1b[0m"
+      rows[6] = ""
+      await view.setContent(rows.join("\n"), 24)
+      const incremental = ctx.getImageData(0, 0, canvas.width, canvas.height).data
+      view.render()
+      const complete = ctx.getImageData(0, 0, canvas.width, canvas.height).data
+      const mismatch = incremental.findIndex((value, index) => value !== complete[index])
+      check(
+        mismatch < 0,
+        `${mode} ${theme}: partial redraw matches a full repaint pixel for pixel` +
+          (mismatch < 0
+            ? ""
+            : ` (first differing y=${Math.floor(mismatch / 4 / canvas.width)}, physical row height=${view.rowHeight * devicePixelRatio})`),
+      )
+    }
+  }
+  // Check both directions and both history edges in every fit mode.
+  for (const mode of ["wrap", "original", "shrink"]) {
+    view.setMode(mode)
+    await view.setContent(stress, 24)
+    await pause(180)
+    const limit = host.scrollHeight - host.clientHeight
+    for (const fraction of [0, 0.5, 1, 0.25]) {
+      host.scrollTop = limit * fraction
+      await pause(40)
+      const beforePixels = canvas.getBoundingClientRect()
+      const beforeText = layer.getBoundingClientRect()
+      check(
+        beforePixels.top <= host.getBoundingClientRect().top + 1 &&
+          beforePixels.bottom >= host.getBoundingClientRect().bottom - 1,
+        `${mode}: buffered pixels cover the viewport at history fraction ${fraction}`,
+      )
+      const previousTop = host.scrollTop
+      host.scrollTop += fraction === 1 ? -12.5 : 12.5
+      const delta = host.scrollTop - previousTop
+      check(
+        Math.abs(delta) > 10 &&
+          Math.abs(canvas.getBoundingClientRect().top - beforePixels.top + delta) < 0.5 &&
+          Math.abs(layer.getBoundingClientRect().top - beforeText.top + delta) < 0.5,
+        `${mode}: pixels and native selection move together before repaint at history fraction ${fraction}`,
+      )
+    }
+    await pause(180)
+  }
+  view.setMode("wrap")
+  for (const text of [
+    "stable 中文\nsecond 👩‍💻",
+    "prefix\nstable 中文\nsecond 👩‍💻",
+    "prefix with edits\nstable 中文\nsecond 👩‍💻\ntail",
+  ]) {
+    await view.setContent(text, 24)
+    await pause(160)
+    selectTerminalText(canvas)
+    const data = new DataTransfer()
+    layer.dispatchEvent(new ClipboardEvent("copy", { clipboardData: data, cancelable: true, bubbles: true }))
+    check(data.getData("text/plain") === text, "Source map reuse retains copy offsets after append, prepend and edits")
+    view.clearSelection()
+    await pause(0)
+  }
   const field = document.createElement("input")
   document.body.append(field)
   const sent = []

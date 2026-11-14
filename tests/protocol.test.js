@@ -1,7 +1,10 @@
 import assert from "node:assert/strict"
+import { once } from "node:events"
 import { mkdtempSync } from "node:fs"
+import { mkdir, mkdtemp, rm } from "node:fs/promises"
+import { createServer } from "node:net"
 import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { join, resolve } from "node:path"
 import { test } from "node:test"
 
 import { HerdrClient } from "../agent/dist/herdr.js"
@@ -102,6 +105,70 @@ test("the client answers a request over a short lived connection", async () => {
     client.close()
     await mock.stop()
   }
+})
+
+test("request deadlines close silent sockets independently and allow a longer agent prompt", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] })
+  await mkdir(resolve(".cache"), { recursive: true })
+  const root = await mkdtemp(join(resolve(".cache"), "herdr-deadline-"))
+  const socketPath = join(root, "herdr.sock")
+  const sockets = new Set()
+  const requests = []
+  const accepted = Promise.withResolvers()
+  let responding = false
+  const server = createServer((socket) => {
+    sockets.add(socket)
+    socket.on("error", () => {})
+    socket.on("close", () => sockets.delete(socket))
+    let buffer = ""
+    socket.setEncoding("utf8")
+    socket.on("data", (chunk) => {
+      buffer += chunk
+      if (!buffer.includes("\n")) return
+      const request = JSON.parse(buffer.trim())
+      requests.push({ socket, request })
+      if (requests.length === 2) accepted.resolve()
+      if (responding) socket.end(`${JSON.stringify({ id: request.id, result: { ok: true } })}\n`)
+    })
+  })
+  const client = new HerdrClient(socketPath)
+  t.after(async () => {
+    client.close()
+    for (const socket of sockets) socket.destroy()
+    await new Promise((done) => server.close(done))
+    await rm(root, { recursive: true, force: true })
+  })
+  await new Promise((done) => server.listen(socketPath, done))
+  let ordinarySettled = false
+  let promptSettled = false
+  const timedOut = (error) => error.code === "request_timeout"
+  const ordinary = assert.rejects(client.request("session.snapshot"), timedOut).then(() => {
+    ordinarySettled = true
+  })
+  const prompt = assert.rejects(client.request("agent.prompt", { target: "t1", text: "once" }), timedOut).then(() => {
+    promptSettled = true
+  })
+  await accepted.promise
+  const ordinaryClosed = once(requests.find(({ request }) => request.method === "session.snapshot").socket, "close")
+  const promptClosed = once(requests.find(({ request }) => request.method === "agent.prompt").socket, "close")
+  t.mock.timers.tick(4999)
+  await new Promise((done) => setImmediate(done))
+  assert.equal(ordinarySettled, false)
+  t.mock.timers.tick(1)
+  await new Promise((done) => setImmediate(done))
+  assert.equal(ordinarySettled, true, "ordinary requests must have a five second deadline")
+  await ordinary
+  await ordinaryClosed
+  assert.equal(promptSettled, false)
+  t.mock.timers.tick(84999)
+  await new Promise((done) => setImmediate(done))
+  assert.equal(promptSettled, false)
+  t.mock.timers.tick(1)
+  await prompt
+  await promptClosed
+  responding = true
+  assert.deepEqual(await client.request("ping"), { ok: true })
+  assert.equal(requests.length, 3)
 })
 
 test("the client reports request errors as herdr error codes", async () => {

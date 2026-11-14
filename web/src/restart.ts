@@ -64,7 +64,7 @@ async function startAgent(
 ): Promise<ApiFailure | null> {
   const name = agentName(pane)
   let failure = await calls.startAgent(pane.pane_id, name, kind, args)
-  for (let round = 1; failure !== null && round < START_TRIES; round += 1) {
+  for (let round = 1; failure?.code === "agent_pane_busy" && round < START_TRIES; round += 1) {
     await wait(calls, START_GAP)
     failure = await calls.startAgent(pane.pane_id, name, kind, args)
   }

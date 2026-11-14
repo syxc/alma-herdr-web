@@ -213,6 +213,36 @@ test("failed input is never retried on another backend or socket", async (t) => 
   assert.deepEqual(factoryCalls, ["first"])
 })
 
+for (const backend of ["tui", "core"]) {
+  test(`${backend} identity stays pinned through an outage even when another socket has the same pane ID`, async (t) => {
+    let first = new FakeClient()
+    const other = new FakeClient()
+    const candidates = []
+    const { client } = fakeAuto(t, {
+      [backend === "core" ? "coreSockets" : "tuiSockets"]: () => ["first", "other"],
+      [backend === "core" ? "createCoreClient" : "createTuiClient"]: (path) => {
+        candidates.push(path)
+        return path === "first" ? first : other
+      },
+    })
+    const paneId = backend === "core" ? "hc:t1" : "t1"
+    await client.request("session.snapshot")
+    await client.request("pane.send_text", { pane_id: paneId, text: "before" })
+    assert.equal(first.calls.at(-1).params.text, "before")
+    first.online = false
+    await client.request("session.snapshot")
+    await assert.rejects(client.request("pane.send_text", { pane_id: paneId, text: "during" }), /unavailable/)
+    await client.request("session.snapshot")
+    await assert.rejects(client.request("pane.send_keys", { pane_id: paneId, keys: ["enter"] }), /unavailable/)
+    assert.equal(other.calls.length, 0)
+    first = new FakeClient()
+    assert.ok((await client.request("session.snapshot")).snapshot.panes.some((pane) => pane.pane_id === paneId))
+    await client.request("pane.send_text", { pane_id: paneId, text: "after" })
+    assert.equal(first.calls.at(-1).params.text, "after")
+    assert.equal(candidates.includes("other"), false)
+  })
+}
+
 test("one side can disconnect and recover while the other snapshot stays online; events request a unified refresh", async (t) => {
   let current = new FakeClient()
   const { client, tui } = fakeAuto(t, { createCoreClient: () => current })
@@ -286,7 +316,7 @@ function frame(channel, kind, payload = Buffer.alloc(0)) {
   return Buffer.concat([header, payload])
 }
 
-async function socketFixture(t) {
+async function socketFixture(t, options = {}) {
   await mkdir(resolve(".cache"), { recursive: true })
   const root = await mkdtemp(join(resolve(".cache"), "auto-"))
   const paths = { tui: join(root, "tui"), core: join(root, "core") }
@@ -322,6 +352,8 @@ async function socketFixture(t) {
         requests[backend].push(message)
         let result = {}
         if (backend === "tui") {
+          options.onTuiRequest?.()
+          if (options.silentTui) return
           if (message.method === "events.subscribe") subscribers.add(socket)
           else if (message.method === "session.snapshot") result = snapshot("t1", "w1")
           else result = { pane_id: message.params.pane_id }
@@ -381,7 +413,11 @@ async function socketFixture(t) {
     for (const socket of sockets[backend]) socket.destroy()
     if (servers[backend]?.listening) await new Promise((done) => servers[backend].close(done))
   }
-  const client = new AutoClient({ tuiSockets: () => [paths.tui], coreSockets: () => [paths.core] })
+  const client = new AutoClient({
+    tuiSockets: () => [paths.tui],
+    coreSockets: () => [paths.core],
+    ...options.clientOptions,
+  })
   t.after(async () => {
     client.close()
     await stop("tui")
@@ -390,6 +426,38 @@ async function socketFixture(t) {
   })
   return { client, requests, input, start, stop, subscribers }
 }
+
+test("an unresponsive TUI releases the pending snapshot and reconnects after its deadline", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] })
+  const accepted = Promise.withResolvers()
+  const options = {
+    silentTui: true,
+    onTuiRequest: accepted.resolve,
+    clientOptions: { createCoreClient: () => new FakeClient() },
+  }
+  const { client, start, requests } = await socketFixture(t, options)
+  await start("tui")
+  let result
+  const pending = client.request("session.snapshot").then((value) => {
+    result = value
+  })
+  const coalesced = client.request("session.snapshot")
+  await accepted.promise
+  t.mock.timers.tick(5000)
+  await new Promise((done) => setImmediate(done))
+  assert.ok(result, "the healthy core snapshot must finish after the TUI deadline")
+  await pending
+  assert.deepEqual(
+    (await coalesced).snapshot.panes.map((pane) => pane.pane_id),
+    ["hc:t1"],
+  )
+  options.silentTui = false
+  assert.deepEqual(
+    (await client.request("session.snapshot")).snapshot.panes.map((pane) => pane.pane_id),
+    ["t1", "hc:t1"],
+  )
+  assert.equal(requests.tui.length, 2)
+})
 
 test("isolated native sockets merge colliding IDs, read/write/create remotely, survive outages and recover", async (t) => {
   const { client, requests, input, start, stop } = await socketFixture(t)

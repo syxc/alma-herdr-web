@@ -1,0 +1,225 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Terminal scroll performance</title>
+<link rel="stylesheet" href="/style.css">
+<style>
+html,
+body {
+  overflow: auto;
+}
+body {
+  margin: 20px;
+  font: 14px system-ui;
+  background: white;
+  color: #1a1a1a;
+}
+#host {
+  width: 390px;
+  height: 500px;
+  overflow: auto;
+}
+#result {
+  white-space: pre-wrap;
+}
+</style>
+<h1>Terminal scroll performance</h1>
+<div id="host"><canvas id="terminal"></canvas></div>
+<pre id="result">Running…</pre>
+<script type="module">
+import { TerminalView } from "/dist/terminal.js"
+
+const host = document.querySelector("#host")
+const canvas = document.querySelector("#terminal")
+const result = document.querySelector("#result")
+const frame = () => new Promise(requestAnimationFrame)
+const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+const percentile = (values, fraction) => {
+  const ordered = [...values].sort((a, b) => a - b)
+  return Number((ordered[Math.min(ordered.length - 1, Math.floor(ordered.length * fraction))] ?? 0).toFixed(2))
+}
+try {
+  const view = new TerminalView(canvas)
+  await view.kernel.load()
+  const sample = Array.from(
+    { length: 120 },
+    (_, index) => `Record ${index}: ${"连续中文内容 mixed English words，保持正常字号与自然换行。".repeat(8)}`,
+  ).join("\n")
+  const paint = view.paint.bind(view)
+  let samples = []
+  view.paint = (...args) => {
+    const start = performance.now()
+    paint(...args)
+    samples.push(performance.now() - start)
+  }
+  const context = canvas.getContext("2d")
+  const fillText = context.fillText.bind(context)
+  let glyphDraws = 0
+  context.fillText = (...args) => {
+    glyphDraws += 1
+    return fillText(...args)
+  }
+  const reports = []
+  const phases = { replay: [], selection: [], render: [], update: [] }
+  const wrap = (owner, name, target) => {
+    const original = owner[name].bind(owner)
+    owner[name] = (...args) => {
+      const start = performance.now()
+      const value = original(...args)
+      if (value instanceof Promise) return value.finally(() => target.push(performance.now() - start))
+      target.push(performance.now() - start)
+      return value
+    }
+  }
+  wrap(view.kernel, "setContent", phases.replay)
+  wrap(view.selection, "update", phases.selection)
+  wrap(view, "render", phases.render)
+  for (const width of [390, 768]) {
+    host.style.width = `${width}px`
+    view.resize()
+    await view.setContent(sample, 24)
+    await pause(180)
+    const limit = host.scrollHeight - host.clientHeight
+    host.scrollTop = limit / 2
+    await pause(180)
+    // Cached pixels and native selection must move together before JS paints again.
+    const textRow = host.querySelector(".terminal-text-row")
+    const canvasTop = canvas.getBoundingClientRect().top
+    const textTop = textRow.getBoundingClientRect().top
+    host.scrollTop += 12.5
+    const nativeDelta = textRow.getBoundingClientRect().top - textTop
+    const pixelDelta = canvas.getBoundingClientRect().top - canvasTop
+    const alignmentErrorPx = Math.abs(pixelDelta - nativeDelta)
+    if (Math.abs(nativeDelta) < 10 || alignmentErrorPx > 0.5) {
+      throw new Error(
+        `Native scroll moves text by ${nativeDelta}px but cached pixels by ${pixelDelta}px before repaint (${width}px)`,
+      )
+    }
+    await frame()
+    await frame()
+    samples = []
+    for (let index = 0; index < 32; index += 1) {
+      host.dispatchEvent(new Event("scroll"))
+    }
+    await frame()
+    await frame()
+    const burstPaints = samples.length
+    glyphDraws = 0
+    const cachedStart = host.scrollTop
+    for (let step = 1; step <= 20; step += 1) {
+      host.scrollTop = cachedStart + step * 5.5
+      await frame()
+    }
+    await frame()
+    const cachedScrollGlyphDraws = glyphDraws
+    if (cachedScrollGlyphDraws !== 0) throw new Error("Small native scrolls must retain cached pixels")
+    samples = []
+    const intervals = []
+    let previous = await frame()
+    for (let index = 0; index < 90; index += 1) {
+      host.scrollTop = limit * (0.2 + (index / 89) * 0.6)
+      const now = await frame()
+      intervals.push(now - previous)
+      previous = now
+    }
+    const scrolling = samples.slice()
+    const fractional = Math.floor(limit / 2 / 21) * 21 + 5.5
+    host.scrollTop = fractional
+    await pause(220)
+    reports.push({
+      width,
+      rows: view.laidOut.length,
+      burstPaints,
+      alignmentErrorPx,
+      cachedScrollGlyphDraws,
+      paintCount: scrolling.length,
+      paintP50Ms: percentile(scrolling, 0.5),
+      paintP95Ms: percentile(scrolling, 0.95),
+      frameP95Ms: percentile(intervals, 0.95),
+      slowFrames: intervals.filter((value) => value > 25).length,
+      settleShiftPx: Number((host.scrollTop - fractional).toFixed(2)),
+      textSpans: host.querySelectorAll(".terminal-text span").length,
+    })
+    for (const values of Object.values(phases)) values.length = 0
+    const originalRows = view.rows.slice()
+    const idleTimes = []
+    glyphDraws = 0
+    for (let index = 0; index < 12; index += 1) {
+      const start = performance.now()
+      await view.setContent(`${sample}\nTail update ${index}`, 24)
+      idleTimes.push(performance.now() - start)
+      await frame()
+    }
+    Object.assign(reports.at(-1), {
+      idleUpdateP50Ms: percentile(idleTimes, 0.5),
+      idleUpdateP95Ms: percentile(idleTimes, 0.95),
+      idleGlyphDraws: glyphDraws,
+      reusedSourceRows: originalRows.filter((row, index) => row === view.rows[index]).length,
+      idlePhaseP95Ms: Object.fromEntries(
+        Object.entries(phases).map(([name, values]) => [name, percentile(values, 0.95)]),
+      ),
+    })
+    if (reports.at(-1).idleGlyphDraws !== 0 || reports.at(-1).reusedSourceRows < 120) {
+      throw new Error(
+        `Offscreen updates must reuse source rows without repainting visible text: ${JSON.stringify(reports)}`,
+      )
+    }
+    for (const values of Object.values(phases)) values.length = 0
+    const smoothIntervals = []
+    let lastFrame = await frame()
+    let running = true
+    const monitor = (now) => {
+      smoothIntervals.push(now - lastFrame)
+      lastFrame = now
+      if (running) requestAnimationFrame(monitor)
+    }
+    requestAnimationFrame(monitor)
+    const reachErrors = []
+    for (let direction = 0; direction < 2; direction += 1) {
+      const target = Math.min(limit, fractional + (direction === 0 ? 1000 : -1000))
+      host.scrollTo({ top: target, behavior: "smooth" })
+      for (let tick = 0; tick < 12; tick += 1) {
+        await pause(100)
+        const start = performance.now()
+        await view.setContent(`${sample}\nOutput ${direction}:${tick}`, 24)
+        phases.update.push(performance.now() - start)
+      }
+      // Wait for actual scroll completion, including the queued snapshot replay.
+      let position = host.scrollTop
+      let quietSince = performance.now()
+      const deadline = quietSince + 3000
+      while (performance.now() < deadline) {
+        await pause(40)
+        if (Math.abs(host.scrollTop - position) > 0.5) {
+          position = host.scrollTop
+          quietSince = performance.now()
+        }
+        if (performance.now() - quietSince >= 180 && view.scrollTimer === null && view.pendingContent === null) break
+      }
+      reachErrors.push(Number(Math.abs(host.scrollTop - target).toFixed(2)))
+    }
+    running = false
+    await frame()
+    Object.assign(reports.at(-1), {
+      latestOutputApplied: view.pendingContent === null && view.text === `${sample}\nOutput 1:11`,
+      smoothReachErrorsPx: reachErrors,
+      smoothFrameP95Ms: percentile(smoothIntervals, 0.95),
+      smoothWorstFrameMs: percentile(smoothIntervals, 1),
+      smoothSlowFrames: smoothIntervals.filter((value) => value > 25).length,
+      phaseP95Ms: Object.fromEntries(Object.entries(phases).map(([name, values]) => [name, percentile(values, 0.95)])),
+    })
+    result.textContent = JSON.stringify(reports, null, 2)
+    if (reachErrors.some((error) => error > 1) || !reports.at(-1).latestOutputApplied) {
+      throw new Error(
+        `Snapshot updates interrupted native smooth scrolling or failed to resume: ${JSON.stringify(reports)}`,
+      )
+    }
+    if (burstPaints !== 1 || Math.abs(reports.at(-1).settleShiftPx) > 0.5) {
+      throw new Error("Scroll events must share one frame without moving the native offset")
+    }
+  }
+  document.title = "DONE — Terminal scroll performance"
+} catch (error) {
+  result.textContent = `FAIL ${error.stack ?? error.message}`
+  document.title = "FAIL — Terminal scroll performance"
+}
+</script>

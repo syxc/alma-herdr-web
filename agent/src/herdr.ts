@@ -90,7 +90,8 @@ export class HerdrClient {
           return
         }
         settled = true
-        socket.end()
+        clearTimeout(timer)
+        socket.destroy()
         if (error !== null) {
           reject(error)
           return
@@ -98,6 +99,11 @@ export class HerdrClient {
         resolve(result ?? {})
       }
 
+      // Prompts can wait for an agent turn; ordinary control requests must fail promptly.
+      const timer = setTimeout(
+        () => finish(new HerdrRequestError("request_timeout", `herdr request ${method} timed out`)),
+        method === "agent.prompt" ? 90000 : 5000,
+      )
       socket.setEncoding("utf8")
       socket.on("connect", () => {
         const payload: HerdrRequest = { id, method, params }

@@ -185,10 +185,16 @@ function inputFixture(t) {
     commandInput: field,
     commandSend: {},
     keyboardToggle: {},
+    keysToggle: {},
+    tabSwitch: { classList: { toggle() {} }, setAttribute() {} },
+    staticNumber: { classList: { toggle() {} } },
+    treeToggle: { classList: { toggle() {} } },
+    tabMenu: { classList: { contains: () => true, add() {} } },
+    statusSeparator: { classList: { toggle() {} } },
     tabNumber: {},
-    detailStatus: {},
+    detailStatus: { classList: { toggle() {} } },
     detailTitle: {},
-    detailDot: {},
+    detailDot: { classList: { toggle() {} } },
     actionMenu: { classList: { contains: () => true } },
   })
   const input = new TerminalInput(field, canvas, {
@@ -338,7 +344,8 @@ test("switching panes sends pending text and keys to their original pane", (t) =
   f.screen.actions.clearSelection = () => cleared.push(f.screen.pane.pane_id)
   f.input.type("pending")
   f.input.sendSpecial(["left"])
-  f.screen.update({ tabs: [], workspaces: [] }, { pane_id: "B", agent_status: "idle" })
+  const pane = { pane_id: "B", agent_status: "idle" }
+  f.screen.update({ panes: [pane], tabs: [], workspaces: [] }, pane)
   assert.deepEqual(cleared, ["A"], "the previous pane selection is cleared before changing the input target")
   assert.equal(f.field.value, "")
   f.input.type("next")
@@ -353,7 +360,7 @@ test("switching panes sends pending text and keys to their original pane", (t) =
 test("losing a pane flushes its pending input without targeting a null pane", (t) => {
   const f = inputFixture(t)
   f.input.type("last")
-  f.screen.update({ tabs: [], workspaces: [] }, null)
+  f.screen.update({ panes: [], tabs: [], workspaces: [] }, null)
   f.input.type("disabled")
   f.tick()
   assert.deepEqual(f.sent, [["A", "text", "last"]])

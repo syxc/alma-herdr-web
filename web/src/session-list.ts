@@ -1,20 +1,23 @@
 import type { PaneRecord, SessionSnapshot } from "./api.js"
 import { ICONS } from "./icons.js"
+import { agentStatus } from "./navigation-state.js"
 
 export interface SessionListOptions {
   snapshot: SessionSnapshot
   selectedPaneId: string | null
+  connected?: boolean
   onPick(paneId: string): void
 }
 
 const GROUPS: { key: string; label: string; match(status: string): boolean }[] = [
   { key: "working", label: "Working", match: (status) => status === "working" },
-  { key: "blocked", label: "Blocked", match: (status) => status === "blocked" },
+  { key: "blocked", label: "Needs input", match: (status) => status === "blocked" },
   {
     key: "settled",
     label: "Settled",
-    match: (status) => status !== "working" && status !== "blocked",
+    match: (status) => status === "done",
   },
+  { key: "terminals", label: "Terminals", match: (status) => status === "" },
 ]
 
 const COLLAPSED_KEY = "alma-herdr-web:collapsed-groups"
@@ -45,7 +48,7 @@ export function paneNumbers(panes: readonly PaneRecord[]): Map<string, number> {
 }
 
 export function statusClass(status: string): string {
-  return ["working", "blocked", "done", "idle"].includes(status) ? status : ""
+  return ["working", "blocked", "done"].includes(status) ? status : ""
 }
 
 function shortPath(path: string): string {
@@ -75,15 +78,16 @@ function subtitle(pane: PaneRecord): { glyph: string; text: string } {
 }
 
 export function renderSessionList(container: HTMLElement, options: SessionListOptions): void {
-  const { snapshot, selectedPaneId, onPick } = options
+  const { snapshot, selectedPaneId, onPick, connected = true } = options
   container.replaceChildren()
 
   const panes = snapshot.panes
   if (panes.length === 0) {
     const empty = document.createElement("div")
     empty.className = "session-empty"
-    empty.textContent =
-      snapshot.workspaces.length === 0
+    empty.textContent = !connected
+      ? "Reconnect to the desktop to view its terminals."
+      : snapshot.workspaces.length === 0
         ? "Open a workspace and terminal in herdr on your computer to get started."
         : "No terminal is open. Use + to start an agent in an existing workspace."
     container.appendChild(empty)
@@ -94,7 +98,7 @@ export function renderSessionList(container: HTMLElement, options: SessionListOp
   const number = paneNumbers(panes)
 
   for (const group of GROUPS) {
-    const members = panes.filter((pane) => group.match(pane.agent_status))
+    const members = panes.filter((pane) => group.match(agentStatus(pane, connected)))
     if (members.length === 0) {
       continue
     }
@@ -144,16 +148,16 @@ export function renderSessionList(container: HTMLElement, options: SessionListOp
       path.className = "path"
       const machine = terminalMachine(pane.pane_id)
       path.textContent = machine === null ? text.text : `${machine} · ${text.text}`
-      row.title = path.textContent
+      row.disabled = !connected
+      row.title = connected ? path.textContent : `${path.textContent} · Reconnect to open this terminal`
       sub.append(glyph, path)
 
       body.append(index, sub)
 
       const tail = document.createElement("span")
       tail.className = "session-tail"
-      // The Alma app marks a pane that is not idle with a dot.
-      const tone = statusClass(pane.agent_status)
-      if (tone !== "" && tone !== "idle") {
+      const tone = agentStatus(pane, connected)
+      if (tone !== "") {
         const dot = document.createElement("span")
         dot.className = `dot ${tone}`
         tail.appendChild(dot)

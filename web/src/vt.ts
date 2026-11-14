@@ -13,6 +13,7 @@ export class TerminalKernel {
   private loading: Promise<boolean> | null = null
   private retryAt = 0
   private colors = TERMINAL_COLORS.dark
+  private rows: Cell[][] = []
 
   setColors(colors: TerminalColors): void {
     this.colors = colors
@@ -61,7 +62,9 @@ export class TerminalKernel {
     }
     try {
       const screen = this.kernel.setContent(text, paneRows, paneCols)
-      return { rows: screen.rows.map(toCells), cols: screen.cols }
+      const rows = screen.rows.map((row, index) => toCells(row, this.rows[index]))
+      if (rows.length !== this.rows.length || rows.some((row, index) => row !== this.rows[index])) this.rows = rows
+      return { rows: this.rows, cols: screen.cols }
     } catch (error) {
       console.warn("the terminal kernel failed", error)
       return null
@@ -69,7 +72,26 @@ export class TerminalKernel {
   }
 }
 
-function toCells(cells: VtCell[]): Cell[] {
+function toCells(cells: VtCell[], previous?: Cell[]): Cell[] {
+  // Snapshot replay is complete, but unchanged rows can remain immutable shared data.
+  if (
+    previous?.length === cells.length &&
+    cells.every((cell, index) => {
+      const old = previous[index]
+      return (
+        old !== undefined &&
+        old.ch === cell.ch &&
+        old.style.fg === cell.fg &&
+        old.style.bg === cell.bg &&
+        old.style.bold === cell.bold &&
+        old.style.italic === cell.italic &&
+        old.style.dim === cell.dim &&
+        old.style.underline === cell.underline &&
+        old.style.reverse === cell.reverse
+      )
+    })
+  )
+    return previous
   return cells.map((cell) => ({
     ch: cell.ch,
     style: {
