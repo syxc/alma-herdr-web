@@ -63,7 +63,7 @@ check(
   decorated &&
     decorated.style.fontWeight === "bold" &&
     decorated.style.fontStyle === "italic" &&
-    decorated.style.textDecoration === "underline",
+    decorated.style.textDecoration === (view.nativeText ? "underline" : "none"),
   "bold italic and underline survive",
 )
 const oldColor = red.style.color

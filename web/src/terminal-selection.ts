@@ -177,6 +177,7 @@ export class TerminalSelection {
     this.sourceOffsets.length = source.length
     this.sourceText = lines.join("\n")
     this.runs = []
+    const native = this.element.classList.contains("terminal-text-native")
     const colors = new Map<string, ReturnType<typeof cellColors>>()
     const previous = this.lines
     this.lines = []
@@ -274,10 +275,10 @@ export class TerminalSelection {
           colors.set(appearance, color)
         }
         span.style.color = color.foreground
-        span.style.backgroundColor = color.background
+        span.style.backgroundColor = native ? color.background : ""
         span.style.fontWeight = cell.style.bold ? "bold" : "normal"
         span.style.fontStyle = cell.style.italic ? "italic" : "normal"
-        span.style.textDecoration = cell.style.underline ? "underline" : "none"
+        span.style.textDecoration = native && cell.style.underline ? "underline" : "none"
         span.textContent = text
         line.append(span)
         if (position !== undefined) {

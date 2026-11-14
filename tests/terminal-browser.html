@@ -62,6 +62,14 @@ function pixel(x, y) {
 try {
   const view = new TerminalView(canvas, undefined, "canvas")
   await view.kernel.load()
+  await view.setContent("\x1b[41mBG\x1b[0m \x1b[7mR\x1b[0m \x1b[4munderline\x1b[0m", 10)
+  check(
+    [...view.selection.element.querySelectorAll("span")].every((span) => {
+      const style = getComputedStyle(span)
+      return style.backgroundColor === "rgba(0, 0, 0, 0)" && style.textDecorationLine === "none"
+    }),
+    "Canvas selection layer cannot cover painted backgrounds, reversed glyphs or underlines",
+  )
   let paints = 0
   const render = view.render.bind(view)
   view.render = (...args) => {
