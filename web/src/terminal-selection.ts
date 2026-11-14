@@ -51,7 +51,12 @@ export class TerminalSelection {
   readonly element: HTMLDivElement
   private readonly doc: Document
   private runs: TextRun[] = []
-  private lines: { key: string; node: HTMLDivElement; runs: TextRun[] }[] = []
+  private lines: { key: string; node: HTMLDivElement; runs: TextRun[]; cells: Cell[]; start: number; end: number }[] =
+    []
+  private source: Cell[][] = []
+  private sourceLines: string[] = []
+  private sourceOffsets: number[] = []
+  private readonly positions = new WeakMap<Cell, SourceRange>()
   private sourceText = ""
   private rows: Cell[][] | null = null
   private metrics = ""
@@ -134,16 +139,25 @@ export class TerminalSelection {
     const signature = JSON.stringify(metrics)
     if (this.rows === rows && this.metrics === signature) return
     this.rows = rows
+    const metricsChanged = this.metrics !== signature
     this.metrics = signature
-    const positions = new Map<Cell, SourceRange>()
+    const positions = this.positions
     const lines: string[] = []
     let offset = 0
-    for (const row of source) {
-      const text = row
-        .map((cell) => cell.ch)
-        .join("")
-        .replace(/\s+$/, "")
+    for (const [index, row] of source.entries()) {
+      const unchanged = row === this.source[index]
+      const text = unchanged
+        ? (this.sourceLines[index] ?? "")
+        : row
+            .map((cell) => cell.ch)
+            .join("")
+            .replace(/\s+$/, "")
       lines.push(text)
+      if (unchanged && this.sourceOffsets[index] === offset) {
+        offset += text.length + 1
+        continue
+      }
+      this.sourceOffsets[index] = offset
       let column = 0
       for (const cell of row) {
         if (cell.ch && column < text.length)
@@ -152,11 +166,37 @@ export class TerminalSelection {
       }
       offset += text.length + 1
     }
+    this.source = source
+    this.sourceLines = lines
+    this.sourceOffsets.length = source.length
     this.sourceText = lines.join("\n")
     this.runs = []
     const previous = this.lines
     this.lines = []
     for (const [index, cells] of rows.entries()) {
+      const prior = previous[index]
+      const firstCell = cells.find((cell) => positions.has(cell))
+      const start = firstCell === undefined ? -1 : (positions.get(firstCell)?.start ?? -1)
+      let sourceFinish = -1
+      for (let column = cells.length - 1; column >= 0; column -= 1) {
+        const cell = cells[column]
+        const position = cell === undefined ? undefined : positions.get(cell)
+        if (position === undefined) continue
+        sourceFinish = position.end
+        break
+      }
+      if (
+        !metricsChanged &&
+        prior !== undefined &&
+        prior.start === start &&
+        prior.end === sourceFinish &&
+        prior.cells.length === cells.length &&
+        cells.every((cell, column) => cell === prior.cells[column])
+      ) {
+        this.lines.push(prior)
+        this.runs.push(...prior.runs)
+        continue
+      }
       let mapping = ""
       let last = -1
       for (const [column, cell] of cells.entries()) {
@@ -166,8 +206,10 @@ export class TerminalSelection {
         last = position.end
       }
       const key = `${cells.map((cell) => cell.ch || "\0").join("")}\u0001${mapping}${last}:${metrics.cellWidth * metrics.scale}`
-      const prior = previous[index]
       if (prior?.key === key) {
+        prior.cells = cells
+        prior.start = start
+        prior.end = sourceFinish
         this.lines.push(prior)
         this.runs.push(...prior.runs)
         continue
@@ -213,7 +255,7 @@ export class TerminalSelection {
         }
         column = next
       }
-      this.lines.push({ key, node: line, runs })
+      this.lines.push({ key, node: line, runs, cells, start, end: sourceFinish })
       this.runs.push(...runs)
       if (prior === undefined) this.element.append(line)
       else prior.node.replaceWith(line)

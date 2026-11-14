@@ -12,12 +12,78 @@ interface PaintMetrics {
   theme: Theme
 }
 
-/** Paint only the rows covered by the viewport-sized backing store. */
+function sameRow(left: Cell[] | undefined, right: Cell[] | undefined): boolean {
+  if (left === right) return true
+  if ((left?.length ?? 0) !== (right?.length ?? 0)) return false
+  return (left ?? []).every((cell, index) => {
+    const old = right?.[index]
+    if (cell === old) return true
+    if (old === undefined || cell.ch !== old.ch) return false
+    const a = cell.style
+    const b = old.style
+    return (
+      a.fg === b.fg &&
+      a.bg === b.bg &&
+      a.bold === b.bold &&
+      a.italic === b.italic &&
+      a.dim === b.dim &&
+      a.underline === b.underline &&
+      a.reverse === b.reverse
+    )
+  })
+}
+
+/** Retain unchanged pixels while the viewport, font and theme stay fixed. */
+export class TerminalPainter {
+  private previous: { signature: string; rows: Cell[][] } | null = null
+
+  paint(
+    canvas: HTMLCanvasElement,
+    ctx: CanvasRenderingContext2D,
+    rows: Cell[][],
+    metrics: PaintMetrics,
+    force = false,
+  ): void {
+    const rect = canvas.getBoundingClientRect()
+    const signature = JSON.stringify([
+      metrics,
+      rect.width,
+      rect.height,
+      canvas.width,
+      canvas.height,
+      window.devicePixelRatio,
+    ])
+    const previous = this.previous
+    let dirty: Set<number> | undefined
+    if (!force && previous?.signature === signature) {
+      dirty = new Set()
+      const height = metrics.cellHeight * metrics.scale
+      const first = Math.floor(metrics.scrollTop / height)
+      const last = Math.ceil((metrics.scrollTop + rect.height) / height)
+      for (let index = first; index < last; index += 1) {
+        if (sameRow(rows[index], previous.rows[index])) continue
+        // Neighbours share glyph overhangs, so repaint them together.
+        for (let row = Math.max(first, index - 1); row <= Math.min(last - 1, index + 1); row += 1) dirty.add(row)
+      }
+    }
+    this.previous = { signature, rows }
+    if (dirty?.size === 0) return
+    const ratio = window.devicePixelRatio || 1
+    // Clearing a fractional pixel edge blends over retained pixels differently from a full repaint.
+    if (!Number.isInteger(metrics.cellHeight * metrics.scale * ratio) || !Number.isInteger(metrics.scrollTop * ratio)) {
+      dirty = undefined
+    }
+    paintTerminal(canvas, ctx, rows, metrics, dirty)
+  }
+}
+
+/** Paint only the rows covered by the bounded backing store. */
 export function paintTerminal(
   canvas: HTMLCanvasElement,
   ctx: CanvasRenderingContext2D,
   cells: Cell[][],
   metrics: PaintMetrics,
+  dirty?: Set<number>,
 ): void {
   const { scale, inset, scrollTop, cellWidth, cellHeight, fontSize, fontFamily, theme } = metrics
   const ratio = window.devicePixelRatio || 1
@@ -25,7 +91,11 @@ export function paintTerminal(
   ctx.setTransform(ratio, 0, 0, ratio, 0, 0)
   ctx.globalAlpha = 1
   ctx.fillStyle = TERMINAL_COLORS[theme].background
-  ctx.fillRect(0, 0, rect.width, rect.height)
+  if (dirty === undefined) ctx.fillRect(0, 0, rect.width, rect.height)
+  else
+    for (const row of dirty) {
+      ctx.fillRect(0, row * cellHeight * scale - scrollTop, rect.width, cellHeight * scale)
+    }
 
   ctx.setTransform(ratio * scale, 0, 0, ratio * scale, 0, 0)
   // The margin of the screen is kept in CSS pixels, the text inside it
@@ -51,6 +121,7 @@ export function paintTerminal(
 
   // Paint backgrounds first so the trailing cell never erases a wide glyph.
   for (let row = first; row < last; row += 1) {
+    if (dirty !== undefined && !dirty.has(row)) continue
     const line = cells[row] ?? []
     let start = 0
     let background = ""
@@ -69,6 +140,7 @@ export function paintTerminal(
   }
   let font = ""
   for (let row = first; row < last; row += 1) {
+    if (dirty !== undefined && !dirty.has(row)) continue
     const line = cells[row] ?? []
     for (let column = 0; column < line.length; column += 1) {
       const cell = line[column]

@@ -1,10 +1,11 @@
 import { type Cell, type Grid, parseAnsi } from "./ansi.js"
 import { IconFontLoader } from "./icon-font.js"
 import { layoutGrid } from "./layout.js"
-import { paintTerminal } from "./terminal-painter.js"
+import { TerminalPainter } from "./terminal-painter.js"
 import { type ScrollDirection, terminalScroll } from "./terminal-scroll.js"
 import { TerminalSelection } from "./terminal-selection.js"
 import { TERMINAL_COLORS, type Theme } from "./terminal-theme.js"
+import { TerminalViewport } from "./terminal-viewport.js"
 import { TerminalKernel } from "./vt.js"
 
 export type FitMode = "wrap" | "original" | "shrink"
@@ -27,6 +28,8 @@ export class TerminalView {
   private readonly selection: TerminalSelection | null
   private pendingContent: { text: string; rows: number; cols: number } | null = null
   private readonly kernel = new TerminalKernel()
+  private readonly painter = new TerminalPainter()
+  private readonly viewport = new TerminalViewport()
   private readonly iconFonts = new IconFontLoader(() => this.render())
   private rows: Cell[][] = []
   private laidOut: Cell[][] = []
@@ -49,7 +52,8 @@ export class TerminalView {
   private anchorOffset = 0
   private anchorSource: { text: string; row: number; column: number } | null = null
   private programmaticTop: number | null = null
-  private snapTimer: number | null = null
+  private paintFrame: number | null = null
+  private scrollTimer: number | null = null
   private text: string | null = null
   private contentRows = 0
   private contentCols = 0
@@ -75,7 +79,8 @@ export class TerminalView {
       this.surface.className = "terminal-surface"
       canvas.before(this.surface)
       this.surface.append(canvas)
-      canvas.style.position = "sticky"
+      canvas.style.position = "absolute"
+      canvas.style.left = "0"
       canvas.style.top = "0"
     }
     this.selection =
@@ -92,13 +97,13 @@ export class TerminalView {
               const revision = this.revision
               void this.setContent(pending.text, pending.rows, pending.cols).then(() => {
                 // Unchanged queued text still needs a resize deferred during selection.
-                if (revision === this.revision) this.render()
+                if (revision === this.revision && this.scrollTimer === null) this.render()
               })
             } else this.render()
           })
         : null
     if (this.host !== null) {
-      this.host.addEventListener("scroll", () => this.handleScroll())
+      this.host.addEventListener("scroll", () => this.handleScroll(), { passive: true })
       terminalScroll(
         this.host,
         () => this.selection?.active() ?? false,
@@ -119,7 +124,7 @@ export class TerminalView {
   }
 
   async setContent(text: string, paneRows: number, paneCols = 0): Promise<void> {
-    if (this.selection?.active()) {
+    if (this.selection?.active() || this.scrollTimer !== null) {
       this.pendingContent = { text, rows: paneRows, cols: paneCols }
       return
     }
@@ -159,7 +164,7 @@ export class TerminalView {
     if (this.contentCols > 0 && screen === null) throw new Error("The native core screen could not be rendered")
     // Loading may finish after another pane or snapshot has replaced this one.
     if (revision !== this.revision) return
-    this.usingKernel = screen !== null && !this.selection?.active()
+    this.usingKernel = screen !== null && !this.selection?.active() && this.scrollTimer === null
     this.apply(
       screen?.rows ?? parseAnsi(this.text, TERMINAL_COLORS[this.theme].palette).cells,
       screen?.cols ?? 0,
@@ -184,14 +189,18 @@ export class TerminalView {
   }
 
   private apply(rows: Cell[][], cols: number, paneRows: number): void {
-    if (this.selection?.active()) {
-      if (this.text !== null) this.pendingContent = { text: this.text, rows: this.contentRows, cols: this.contentCols }
+    if (this.selection?.active() || this.scrollTimer !== null) {
+      if (this.text !== null)
+        this.pendingContent ??= { text: this.text, rows: this.contentRows, cols: this.contentCols }
       return
     }
     this.captureAnchor()
-    this.rows = rows
-    this.layoutDirty = true
-    this.iconFonts.load(rows.map((row) => row.map((cell) => cell.ch).join("")).join(""))
+    if (cols > 0 && cols !== this.paneCols) this.layoutDirty = true
+    if (this.rows !== rows) {
+      this.rows = rows
+      this.layoutDirty = true
+      this.iconFonts.load(rows.map((row) => row.map((cell) => cell.ch).join("")).join(""))
+    }
     if (cols > 0) {
       this.paneCols = cols
     } else {
@@ -204,18 +213,7 @@ export class TerminalView {
       this.paneCols = widest
     }
     this.paneRows = paneRows > 0 ? paneRows : rows.length
-    this.render()
-  }
-
-  private syncSize(): void {
-    const ratio = window.devicePixelRatio || 1
-    const rect = this.canvas.getBoundingClientRect()
-    const width = Math.max(1, Math.floor(rect.width * ratio))
-    const height = Math.max(1, Math.floor(rect.height * ratio))
-    if (this.canvas.width !== width || this.canvas.height !== height) {
-      this.canvas.width = width
-      this.canvas.height = height
-    }
+    this.render(false)
   }
 
   resize(): void {
@@ -241,6 +239,8 @@ export class TerminalView {
   }
 
   clearSelection(): void {
+    if (this.scrollTimer !== null) window.clearTimeout(this.scrollTimer)
+    this.scrollTimer = null
     this.pendingContent = null
     this.selection?.clear()
   }
@@ -266,7 +266,8 @@ export class TerminalView {
       if (text.length > 0) {
         this.anchorText = text
         this.anchorIndex = index
-        this.anchorOffset = top - index
+        const fraction = this.host === null ? 0 : this.host.scrollTop / this.rowHeight - this.topRow
+        this.anchorOffset = top - index + fraction
         this.anchorSource = null
         const target = this.laidOut[index]?.find((cell) => cell.ch.trim().length > 0)
         if (target !== undefined) {
@@ -328,7 +329,8 @@ export class TerminalView {
     if (host === null) {
       return
     }
-    host.scrollTop = row * this.rowHeight
+    // Even assigning the same offset cancels native smooth scrolling.
+    if (Math.abs(host.scrollTop - row * this.rowHeight) > 0.5) host.scrollTop = row * this.rowHeight
     this.programmaticTop = host.scrollTop
     this.topRow = Math.round(host.scrollTop / this.rowHeight)
   }
@@ -353,32 +355,25 @@ export class TerminalView {
     }
     this.topRow = Math.round(host.scrollTop / this.rowHeight)
     this.follow = !this.selection?.active() && this.topRow + this.visibleRows() >= this.laidOut.length - 1
-    this.paint()
-    if (this.snapTimer !== null) {
-      window.clearTimeout(this.snapTimer)
+    if (!restored && !this.follow) {
+      if (this.scrollTimer !== null) window.clearTimeout(this.scrollTimer)
+      // Replaying a full snapshot blocks scrolling and restoring its anchor cancels inertia.
+      this.scrollTimer = window.setTimeout(() => {
+        this.scrollTimer = null
+        const pending = this.pendingContent
+        this.pendingContent = null
+        if (pending !== null) void this.setContent(pending.text, pending.rows, pending.cols)
+      }, 120)
     }
-    if (this.selection?.active()) return
-    this.snapTimer = window.setTimeout(() => {
-      this.snapTimer = null
-      this.snap()
-    }, 140)
+    if (this.paintFrame !== null) return
+    // Native scrolling owns the offset; paint its latest position once per frame.
+    this.paintFrame = window.requestAnimationFrame(() => {
+      this.paintFrame = null
+      this.paint()
+    })
   }
 
-  private snap(): void {
-    const host = this.host
-    if (host === null || this.rowHeight === 0 || this.selection?.active()) {
-      return
-    }
-    const row = Math.round(host.scrollTop / this.rowHeight)
-    const target = row * this.rowHeight
-    if (Math.abs(host.scrollTop - target) < 0.5) {
-      return
-    }
-    host.scrollTop = target
-    this.programmaticTop = host.scrollTop
-  }
-
-  render(): void {
+  render(force = true): void {
     if (this.selection?.active()) return
     const ctx = this.context
     const ratio = window.devicePixelRatio || 1
@@ -419,23 +414,15 @@ export class TerminalView {
     // so. The other modes keep the size of the text.
     const scale = this.mode === "shrink" && contentWidth > 0 ? Math.min(1, usable / contentWidth) : 1
 
-    // The surface carries the scroll range; the canvas only covers the viewport.
-    // Pad the surface so the last scroll position lands on a whole row.
-    const lineHeight = this.cellHeight * scale
-    this.rowHeight = lineHeight
-    const content = contentHeight * scale
-    let canvasHeight = Math.max(viewHeight, content)
-    if (content > viewHeight && lineHeight > 0) {
-      const pad = (lineHeight - ((content - viewHeight) % lineHeight)) % lineHeight
-      canvasHeight = content + pad
-    }
+    // The surface carries history; the canvas retains a bounded strip around the viewport.
+    this.rowHeight = this.cellHeight * scale
+    const canvasHeight = Math.max(viewHeight, contentHeight * scale)
     this.canvas.style.width = `${this.mode === "shrink" ? viewWidth : Math.max(viewWidth, inset + contentWidth + inset)}px`
-    this.canvas.style.height = `${host === null ? canvasHeight : Math.max(1, viewHeight)}px`
+    if (host === null) this.canvas.style.height = `${canvasHeight}px`
     if (this.surface !== null) {
       this.surface.style.width = this.canvas.style.width
       this.surface.style.height = `${canvasHeight}px`
     }
-    this.syncSize()
     this.selection?.update(this.laidOut, this.rows, {
       width: contentWidth,
       cellWidth: this.cellWidth,
@@ -450,28 +437,50 @@ export class TerminalView {
       if (this.follow) {
         // The newest line stays in sight while the reader stays at the bottom.
         host.scrollTop = host.scrollHeight
+        this.programmaticTop = host.scrollTop
         this.topRow = Math.max(0, this.laidOut.length - this.visibleRows())
       } else {
         this.restoreAnchor()
       }
     }
 
-    this.paint()
+    this.paint(force)
   }
 
-  private paint(): void {
+  private paint(force = false): void {
+    if (this.paintFrame !== null) {
+      window.cancelAnimationFrame(this.paintFrame)
+      this.paintFrame = null
+    }
+    if (this.host !== null && (this.host.clientWidth <= 0 || this.host.clientHeight <= 0)) return
     const contentWidth = this.layoutCols * this.cellWidth
     const scale = this.mode === "shrink" && contentWidth > 0 ? Math.min(1, this.layoutWidth / contentWidth) : 1
-    paintTerminal(this.canvas, this.context, this.laidOut, {
-      scale,
-      inset: this.host === null ? 0 : SCREEN_INSET,
-      scrollTop: this.host?.scrollTop ?? 0,
-      cellWidth: this.cellWidth,
-      cellHeight: this.cellHeight,
-      fontSize: this.fontSize,
-      fontFamily: this.fontFamily,
-      theme: this.theme,
-    })
+    const scrollTop =
+      this.host === null
+        ? 0
+        : this.viewport.update(
+            this.canvas,
+            this.host,
+            this.rowHeight,
+            Math.max(this.host.clientHeight, this.laidOut.length * this.rowHeight),
+          )
+    this.viewport.syncSize(this.canvas)
+    this.painter.paint(
+      this.canvas,
+      this.context,
+      this.laidOut,
+      {
+        scale,
+        inset: this.host === null ? 0 : SCREEN_INSET,
+        scrollTop,
+        cellWidth: this.cellWidth,
+        cellHeight: this.cellHeight,
+        fontSize: this.fontSize,
+        fontFamily: this.fontFamily,
+        theme: this.theme,
+      },
+      force,
+    )
   }
 
   size(): { cols: number; rows: number } {

@@ -1,64 +1,12 @@
 import assert from "node:assert/strict"
 import { readFile } from "node:fs/promises"
 import { test } from "node:test"
-import { TerminalView } from "../web/dist/terminal.js"
 import { cellColors } from "../web/dist/terminal-theme.js"
 import { TerminalKernel } from "../web/dist/vt.js"
+import { environment, ready } from "./helpers/terminal-environment.js"
 
 const bytes = await readFile(new URL("../web/vendor/ghostty/ghostty-vt.wasm", import.meta.url))
 const settle = () => new Promise((resolve) => setImmediate(resolve))
-
-function environment(t, response = Promise.resolve(new Response(bytes)), host = null) {
-  for (const name of ["window", "document", "fetch"]) {
-    const descriptor = Object.getOwnPropertyDescriptor(globalThis, name)
-    t.after(() => {
-      if (descriptor) Object.defineProperty(globalThis, name, descriptor)
-      else delete globalThis[name]
-    })
-  }
-  globalThis.window = { devicePixelRatio: 1, setTimeout, clearTimeout }
-  globalThis.document = {
-    fonts: new Set(),
-    createElement: () => ({
-      style: {},
-      append() {
-        if (host !== null) host.surface = this
-      },
-    }),
-  }
-  globalThis.fetch = () => response
-  const operations = []
-  const context = {
-    globalAlpha: 1,
-    setTransform() {},
-    translate() {},
-    measureText: () => ({ width: 8 }),
-    fillRect(x, y, width, height) {
-      operations.push({ kind: "rect", x, y, width, height, color: this.fillStyle, alpha: this.globalAlpha })
-    },
-    fillText(text, x, y) {
-      operations.push({ kind: "text", text, x, y, color: this.fillStyle, alpha: this.globalAlpha })
-    },
-  }
-  const canvas = {
-    parentElement: host,
-    style: {},
-    width: 300,
-    height: 100,
-    before() {},
-    getContext: () => context,
-    getBoundingClientRect: () => ({
-      width: host === null ? 300 : Number.parseFloat(canvas.style.width ?? "300"),
-      height: host === null ? 100 : Number.parseFloat(canvas.style.height ?? "100"),
-    }),
-  }
-  return { view: new TerminalView(canvas), operations, canvas }
-}
-
-async function ready(view) {
-  assert.equal(await view.kernel.load(), true)
-  await settle()
-}
 
 test("native core screen metadata reaches the renderer and participates in caching", async (t) => {
   const { view } = environment(t)
@@ -100,6 +48,12 @@ test("a late kernel repaints the latest snapshot without waiting for another pol
   operations.length = 0
   pending.resolve(new Response(bytes))
   await ready(view)
+  assert.equal(view.usingKernel, true, "loading applies the latest snapshot without another poll")
+  assert.deepEqual(
+    view.rows[0].map((cell) => cell.ch),
+    ["你", "", "Z"],
+  )
+  view.resize()
   const text = operations.filter((op) => op.kind === "text")
   assert.deepEqual(
     text.map((op) => op.text),
@@ -149,21 +103,21 @@ test("fixed neutral snapshot colours follow the page while accents retain readab
   const light = "\x1b[48;2;240;240;240m\x1b[38;2;0;0;0mM\x1b[49;38;2;102;102;102mH\x1b[38;2;215;119;87mA\x1b[0m"
   operations.length = 0
   await view.setContent(light, 5)
-  assert.equal(operations.find((op) => op.kind === "rect" && op.height === 21).color, "#2d313a")
+  assert.equal(operations.find((op) => op.kind === "rect" && op.height === 21 && op.width < 300).color, "#2d313a")
   assert.deepEqual(
     operations.filter((op) => op.kind === "text").map((op) => op.color),
     ["#dcdfe4", "#9da2ae", "#d77959"],
   )
   operations.length = 0
   await view.setTheme("light")
-  assert.equal(operations.find((op) => op.kind === "rect" && op.height === 21).color, "#f0f0f0")
+  assert.equal(operations.find((op) => op.kind === "rect" && op.height === 21 && op.width < 300).color, "#f0f0f0")
   assert.deepEqual(
     operations.filter((op) => op.kind === "text").map((op) => op.color),
     ["#000000", "#666666", "#b06147"],
   )
   operations.length = 0
   await view.setContent("\x1b[48;2;32;32;32m\x1b[38;2;240;240;240mD\x1b[0m", 5)
-  assert.equal(operations.find((op) => op.kind === "rect" && op.height === 21).color, "#f0f2f5")
+  assert.equal(operations.find((op) => op.kind === "rect" && op.height === 21 && op.width < 300).color, "#f0f2f5")
   assert.equal(operations.find((op) => op.kind === "text").color, "#1a1a1a")
 })
 
@@ -191,11 +145,11 @@ test("fallback snapshots and the loaded kernel use the same adaptive colours", a
   const { view, operations } = environment(t, pending.promise)
   const content = "\x1b[48;2;240;240;240;38;2;0;0;0mM"
   await view.setContent(content, 5)
-  assert.equal(operations.findLast((op) => op.kind === "rect" && op.height === 21).color, "#2d313a")
+  assert.equal(operations.findLast((op) => op.kind === "rect" && op.height === 21 && op.width < 300).color, "#2d313a")
   assert.equal(operations.findLast((op) => op.kind === "text").color, "#dcdfe4")
   pending.resolve(new Response(bytes))
   await ready(view)
-  assert.equal(operations.findLast((op) => op.kind === "rect" && op.height === 21).color, "#2d313a")
+  assert.equal(operations.findLast((op) => op.kind === "rect" && op.height === 21 && op.width < 300).color, "#2d313a")
   assert.equal(operations.findLast((op) => op.kind === "text").color, "#dcdfe4")
 })
 
@@ -213,7 +167,7 @@ test("wide glyph backgrounds precede text and dim cannot leak into the next back
   await ready(view)
   await view.setContent("\x1b[2mA\x1b[22;41m你\x1b[4m B", 5)
   const firstText = operations.findIndex((op) => op.kind === "text")
-  const backgrounds = operations.filter((op) => op.kind === "rect" && op.height === 21)
+  const backgrounds = operations.filter((op) => op.kind === "rect" && op.height === 21 && op.width < 300)
   assert.ok(backgrounds.length > 0)
   assert.ok(backgrounds.every((op) => op.alpha === 1))
   assert.ok(operations.slice(firstText).every((op) => op.kind !== "rect" || op.height === 1))
@@ -229,7 +183,7 @@ test("background runs merge same colours while preserving RGB, reset and reverse
   view.setMode("original")
   operations.length = 0
   await view.setContent("\x1b[48;2;239;239;239m A你 \x1b[44m B\x1b[49mZ\x1b[7mR\x1b[0mN", 5)
-  const backgrounds = operations.filter((op) => op.kind === "rect" && op.height === 21)
+  const backgrounds = operations.filter((op) => op.kind === "rect" && op.height === 21 && op.width < 300)
   assert.deepEqual(
     backgrounds.map(({ x, width, color }) => ({ x, width, color })),
     [
@@ -308,7 +262,6 @@ const readingContent = Array.from(
 test("width and mode changes keep the source character being read in view", async (t) => {
   const host = scrollHost()
   const { view } = environment(t, Promise.resolve(new Response(bytes)), host)
-  t.after(() => clearTimeout(view.snapTimer))
   await ready(view)
   await view.setContent(readingContent, 24)
   host.scrollTop = 20 * view.rowHeight
@@ -371,24 +324,147 @@ test("hidden terminals defer layout and painting until their viewport returns", 
   assert.ok(operations.some((operation) => operation.kind === "text"))
 })
 
-test("long snapshots paint only visible rows and repaint on reader scrolling", async (t) => {
+test("scroll bursts paint once per frame using the latest reading position", async (t) => {
   const host = scrollHost()
-  const { view, canvas, operations } = environment(t, Promise.resolve(new Response(bytes)), host)
-  t.after(() => clearTimeout(view.snapTimer))
+  const { view, canvas, operations, flushFrame } = environment(t, Promise.resolve(new Response(bytes)), host)
   await ready(view)
   await view.setContent(readingContent, 24)
-  assert.equal(canvas.height, host.clientHeight)
+  operations.length = 0
+  for (let index = 0; index < 32; index += 1) {
+    host.scrollTop = (20 + index) * view.rowHeight
+    view.handleScroll()
+  }
+  assert.equal(operations.length, 0, "scroll events defer drawing until the next frame")
+  flushFrame()
+  assert.equal(operations.filter((op) => op.kind === "rect" && op.x === 0 && op.y === 0).length, 1)
+  const firstLine = operations
+    .filter(
+      (op) => op.kind === "text" && op.y === 51 * view.rowHeight - Number.parseFloat(canvas.style.top) + view.fontSize,
+    )
+    .map((op) => op.text)
+    .join("")
+  assert.equal(
+    firstLine,
+    view.laidOut[51]
+      .map((cell) => cell.ch)
+      .join("")
+      .replaceAll(" ", ""),
+  )
+})
+
+test("stopping between rows preserves the native scroll offset", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] })
+  const host = scrollHost()
+  const { view, flushFrame } = environment(t, Promise.resolve(new Response(bytes)), host)
+  await ready(view)
+  await view.setContent(readingContent, 24)
+  host.scrollTop = 20 * view.rowHeight + 5.5
+  const offset = host.scrollTop
+  view.handleScroll()
+  flushFrame()
+  t.mock.timers.tick(220)
+  assert.equal(host.scrollTop, offset)
+})
+
+test("new output and theme changes preserve a fractional reading offset", async (t) => {
+  const host = scrollHost()
+  const { view, flushFrame } = environment(t, Promise.resolve(new Response(bytes)), host)
+  await ready(view)
+  await view.setContent(readingContent, 24)
+  host.scrollTop = 20 * view.rowHeight + 5.5
+  view.handleScroll()
+  flushFrame()
+  const offset = host.scrollTop
+  await view.setContent(`${readingContent}\nnew output`, 24)
+  assert.equal(host.scrollTop, offset, "output arriving while reading does not snap to a row")
+  await view.setTheme("light")
+  assert.equal(host.scrollTop, offset, "theme changes retain the offset inside the row")
+})
+
+test("scrolling queues only the latest snapshot until native movement settles", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] })
+  const host = scrollHost()
+  const { view, flushFrame } = environment(t, Promise.resolve(new Response(bytes)), host)
+  await ready(view)
+  await view.setContent(readingContent, 24)
+  host.scrollTop = 20 * view.rowHeight + 5.5
+  view.handleScroll()
+  flushFrame()
+  const rows = view.rows
+  await view.setContent(`${readingContent}\nintermediate output`, 24)
+  await view.setContent(`${readingContent}\nlatest output`, 24)
+  assert.ok(view.rows === rows, "snapshot replay must not block active scrolling")
+  t.mock.timers.tick(80)
+  host.scrollTop += 10
+  view.handleScroll()
+  t.mock.timers.tick(80)
+  await settle()
+  assert.ok(view.rows === rows, "continued scrolling extends the quiet period")
+  t.mock.timers.tick(80)
+  await settle()
+  assert.equal(view.text, `${readingContent}\nlatest output`)
+  assert.equal(view.pendingContent, null)
+  assert.equal(host.scrollTop, 20 * view.rowHeight + 15.5)
+})
+
+test("a replay finishing during scrolling cannot overwrite the latest queued snapshot", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] })
+  const host = scrollHost()
+  const { view } = environment(t, Promise.resolve(new Response(bytes)), host)
+  await ready(view)
+  await view.setContent(readingContent, 24)
+  const pending = Promise.withResolvers()
+  const replay = t.mock.method(view.kernel, "setContent", () => pending.promise)
+  const inflight = view.setContent("older snapshot", 24)
+  host.scrollTop = 20 * view.rowHeight
+  view.handleScroll()
+  await view.setContent("latest queued snapshot", 24)
+  pending.resolve({ rows: view.rows, cols: view.paneCols })
+  await inflight
+  assert.equal(view.pendingContent.text, "latest queued snapshot")
+  replay.mock.restore()
+  t.mock.timers.tick(200)
+  await settle()
+  assert.equal(view.text, "latest queued snapshot")
+  assert.equal(view.rows[0].map((cell) => cell.ch).join(""), "latest queued snapshot")
+})
+
+test("resetting a pane cancels a snapshot queued during scrolling", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] })
+  const host = scrollHost()
+  const { view } = environment(t, Promise.resolve(new Response(bytes)), host)
+  await ready(view)
+  await view.setContent(readingContent, 24)
+  host.scrollTop = 20 * view.rowHeight
+  view.handleScroll()
+  await view.setContent(`${readingContent}\nold pane output`, 24)
+  view.clearSelection()
+  await view.setContent("new pane", 24)
+  t.mock.timers.tick(200)
+  await settle()
+  assert.equal(view.text, "new pane")
+  assert.equal(view.rows[0].map((cell) => cell.ch).join(""), "new pane")
+  assert.equal(view.pendingContent, null)
+})
+
+test("long snapshots bound the pixel buffer and paint the requested rows after a scroll jump", async (t) => {
+  const host = scrollHost()
+  const { view, canvas, operations, flushFrame } = environment(t, Promise.resolve(new Response(bytes)), host)
+  await ready(view)
+  await view.setContent(readingContent, 24)
+  assert.equal(canvas.height, host.clientHeight * 3)
   assert.ok(host.scrollHeight > host.clientHeight * 10)
   operations.length = 0
   host.scrollTop = 20 * view.rowHeight
   view.handleScroll()
+  flushFrame()
   const draws = operations.filter((op) => op.kind === "text")
   assert.ok(draws.length > 0)
-  assert.ok(draws.length < 10 * view.layoutCols, "the full history is not repainted on scroll")
-  assert.ok(draws.every((op) => op.y >= 0 && op.y <= host.clientHeight + view.cellHeight))
+  assert.ok(draws.length < 30 * view.layoutCols, "the full history is not repainted on scroll")
+  assert.ok(draws.every((op) => op.y >= 0 && op.y <= canvas.height + view.cellHeight))
   assert.equal(
     draws
-      .filter((op) => op.y === view.fontSize)
+      .filter((op) => op.y === 20 * view.rowHeight - Number.parseFloat(canvas.style.top) + view.fontSize)
       .map((op) => op.text)
       .join(""),
     view.laidOut[20]
