@@ -103,21 +103,30 @@ test("fixed neutral snapshot colours follow the page while accents retain readab
   const light = "\x1b[48;2;240;240;240m\x1b[38;2;0;0;0mM\x1b[49;38;2;102;102;102mH\x1b[38;2;215;119;87mA\x1b[0m"
   operations.length = 0
   await view.setContent(light, 5)
-  assert.equal(operations.find((op) => op.kind === "rect" && op.height === 21 && op.width < 300).color, "#2d313a")
+  assert.equal(
+    operations.find((op) => op.kind === "rect" && op.height === view.cellHeight && op.width < 300).color,
+    "#2d313a",
+  )
   assert.deepEqual(
     operations.filter((op) => op.kind === "text").map((op) => op.color),
     ["#dcdfe4", "#9da2ae", "#d77959"],
   )
   operations.length = 0
   await view.setTheme("light")
-  assert.equal(operations.find((op) => op.kind === "rect" && op.height === 21 && op.width < 300).color, "#f0f0f0")
+  assert.equal(
+    operations.find((op) => op.kind === "rect" && op.height === view.cellHeight && op.width < 300).color,
+    "#f0f0f0",
+  )
   assert.deepEqual(
     operations.filter((op) => op.kind === "text").map((op) => op.color),
     ["#000000", "#666666", "#b06147"],
   )
   operations.length = 0
   await view.setContent("\x1b[48;2;32;32;32m\x1b[38;2;240;240;240mD\x1b[0m", 5)
-  assert.equal(operations.find((op) => op.kind === "rect" && op.height === 21 && op.width < 300).color, "#f0f2f5")
+  assert.equal(
+    operations.find((op) => op.kind === "rect" && op.height === view.cellHeight && op.width < 300).color,
+    "#f0f2f5",
+  )
   assert.equal(operations.find((op) => op.kind === "text").color, "#1a1a1a")
 })
 
@@ -145,11 +154,17 @@ test("fallback snapshots and the loaded kernel use the same adaptive colours", a
   const { view, operations } = environment(t, pending.promise)
   const content = "\x1b[48;2;240;240;240;38;2;0;0;0mM"
   await view.setContent(content, 5)
-  assert.equal(operations.findLast((op) => op.kind === "rect" && op.height === 21 && op.width < 300).color, "#2d313a")
+  assert.equal(
+    operations.findLast((op) => op.kind === "rect" && op.height === view.cellHeight && op.width < 300).color,
+    "#2d313a",
+  )
   assert.equal(operations.findLast((op) => op.kind === "text").color, "#dcdfe4")
   pending.resolve(new Response(bytes))
   await ready(view)
-  assert.equal(operations.findLast((op) => op.kind === "rect" && op.height === 21 && op.width < 300).color, "#2d313a")
+  assert.equal(
+    operations.findLast((op) => op.kind === "rect" && op.height === view.cellHeight && op.width < 300).color,
+    "#2d313a",
+  )
   assert.equal(operations.findLast((op) => op.kind === "text").color, "#dcdfe4")
 })
 
@@ -167,7 +182,7 @@ test("wide glyph backgrounds precede text and dim cannot leak into the next back
   await ready(view)
   await view.setContent("\x1b[2mA\x1b[22;41m你\x1b[4m B", 5)
   const firstText = operations.findIndex((op) => op.kind === "text")
-  const backgrounds = operations.filter((op) => op.kind === "rect" && op.height === 21 && op.width < 300)
+  const backgrounds = operations.filter((op) => op.kind === "rect" && op.height === view.cellHeight && op.width < 300)
   assert.ok(backgrounds.length > 0)
   assert.ok(backgrounds.every((op) => op.alpha === 1))
   assert.ok(operations.slice(firstText).every((op) => op.kind !== "rect" || op.height === 1))
@@ -183,7 +198,7 @@ test("background runs merge same colours while preserving RGB, reset and reverse
   view.setMode("original")
   operations.length = 0
   await view.setContent("\x1b[48;2;239;239;239m A你 \x1b[44m B\x1b[49mZ\x1b[7mR\x1b[0mN", 5)
-  const backgrounds = operations.filter((op) => op.kind === "rect" && op.height === 21 && op.width < 300)
+  const backgrounds = operations.filter((op) => op.kind === "rect" && op.height === view.cellHeight && op.width < 300)
   assert.deepEqual(
     backgrounds.map(({ x, width, color }) => ({ x, width, color })),
     [
@@ -198,7 +213,7 @@ test("background runs merge same colours while preserving RGB, reset and reverse
   operations.length = 0
   await view.setContent("first\nsecond", 5)
   const rows = operations.filter((op) => op.kind === "text")
-  assert.equal(rows.at(-1).y - rows[0].y, 21)
+  assert.equal(rows.at(-1).y - rows[0].y, view.cellHeight)
 })
 
 test("a stalled WASM download times out and does not block a later attempt", async (t) => {
@@ -303,7 +318,8 @@ test("fit modes reflow or shrink only when content exceeds the viewport", async 
       assert.equal(view.laidOut.length, originalRows)
       assert.equal(Number.parseFloat(canvas.style.width), width)
       assert.equal(view.rowHeight / view.cellHeight, Math.min(1, usable / originalWidth))
-      assert.equal(view.fontSize, 14, "changing mode does not change the source font size")
+      assert.equal(view.fontSize, 13, "changing mode does not change the source font size")
+      assert.equal(view.cellHeight, 20, "13px text uses the rounded 1.5 line height")
     }
   }
 })

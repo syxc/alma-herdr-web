@@ -86,7 +86,8 @@ function widthBound(lines: string[]): number {
   let widest = 0
   for (const line of lines) {
     let width = 0
-    for (const ch of line) {
+    // SGR changes cell attributes, so it must not reserve terminal columns.
+    for (const ch of line.replace(/\x1b\[[0-9;:]*m/g, "")) {
       const point = ch.codePointAt(0)
       width += point !== undefined && point < 0x80 ? 1 : 2
     }
@@ -222,11 +223,11 @@ export class GhosttyKernel {
       lines.pop()
     }
     const cols = widthBound(lines)
-    const rows = Math.max(1, paneRows > 0 ? paneRows : lines.length)
+    // Keep the complete snapshot on screen: VT history capacity also depends on
+    // cell width and styles, so replaying through scrollback can evict source rows.
+    const rows = Math.max(1, paneRows, lines.length)
 
-    // The screen and the scrollback are emptied first, so the terminal holds
-    // exactly what was read this time. Lines that do not fit on the screen
-    // end up in the scrollback, which is where the older lines belong.
+    // The screen and the scrollback are emptied before each independent snapshot.
     // Snapshots contain complete Unicode graphemes, including ZWJ emoji and flags.
     this.write("\u001b[?2027h\u001b[0m\u001b[3J\u001b[2J\u001b[H")
     this.resize(cols, rows)

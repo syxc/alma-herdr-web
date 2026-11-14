@@ -711,6 +711,11 @@ button.active {
   box-shadow: 0 8px 24px var(--popover-shadow);
 }
 
+#tab-menu {
+  left: 50%;
+  transform: translateX(-50%);
+}
+
 .new-terminal-menu {
   left: auto;
   right: 12px;
@@ -837,8 +842,16 @@ button.active {
   cursor: text;
   outline: none;
 }
+.terminal-text-native {
+  color: inherit;
+  -webkit-text-fill-color: currentColor;
+}
 .terminal-text-row {
   height: var(--terminal-line-height);
+}
+.terminal-text-native > .terminal-text-row {
+  /* Bound scroll-tile painting to rows without deferring their text or layout. */
+  contain: layout paint style;
 }
 .terminal-text-row > span {
   display: inline-block;
@@ -847,6 +860,9 @@ button.active {
 .terminal-text ::selection {
   color: transparent;
   background: var(--selection);
+}
+.terminal-text-native ::selection {
+  color: inherit;
 }
 
 #terminal {
@@ -927,7 +943,7 @@ button.active {
   touch-action: pan-x;
 }
 .key-symbol {
-  font-size: 20px;
+  font-size: 17px;
 }
 .key-chip:active:enabled,
 .key-chip[aria-pressed="true"] {

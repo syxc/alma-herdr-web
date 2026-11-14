@@ -38,7 +38,7 @@ const percentile = (values, fraction) => {
   return Number((ordered[Math.min(ordered.length - 1, Math.floor(ordered.length * fraction))] ?? 0).toFixed(2))
 }
 try {
-  const view = new TerminalView(canvas)
+  const view = new TerminalView(canvas, undefined, "canvas")
   await view.kernel.load()
   const sample = Array.from(
     { length: 120 },
@@ -193,7 +193,7 @@ try {
           position = host.scrollTop
           quietSince = performance.now()
         }
-        if (performance.now() - quietSince >= 180 && view.scrollTimer === null && view.pendingContent === null) break
+        if (performance.now() - quietSince >= 180 && !view.scrollPause.active && view.pendingContent === null) break
       }
       reachErrors.push(Number(Math.abs(host.scrollTop - target).toFixed(2)))
     }

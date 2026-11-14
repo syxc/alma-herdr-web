@@ -52,7 +52,7 @@ function requests() {
 }
 try {
   const canvas = document.querySelector("#terminal")
-  const terminal = new TerminalView(canvas)
+  const terminal = new TerminalView(canvas, undefined, "canvas")
   check(
     getComputedStyle(document.querySelector(".terminal-text")).position === "absolute",
     "Selection text uses the application overlay layout instead of adding scroll height",

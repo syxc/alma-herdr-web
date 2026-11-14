@@ -229,11 +229,33 @@ export function layoutGrid(grid: Grid, width: number): Grid {
     previous = row
     if (continues) {
       const rest = row.cells.slice(row.indent)
+      let glyph = current.length - 1
+      while (glyph >= 0 && !current[glyph]!.ch.trim()) glyph--
+      const fill = current[glyph]?.style.bg
+      // Only continuous message fill is decoration; isolated styled blanks are content.
+      while (current.length > 0) {
+        const last = current[current.length - 1]!
+        if (
+          last.ch !== " " ||
+          !last.style.bg ||
+          last.style.bg !== fill ||
+          last.style.bg !== rest[0]?.style.bg ||
+          last.style.underline ||
+          last.style.reverse
+        )
+          break
+        current.pop()
+      }
       const left = current[previousGlyph(current, current.length)]?.ch ?? ""
       const right = rest[0]?.ch ?? ""
       // CJK source rows have no word separator; do not invent spaces in a sentence.
       const cjkJoin = (CJK.test(left) || /[，。！？、；：）】》」』]/u.test(left)) && CJK.test(right)
-      if (!cjkJoin && !NO_START.test(right) && !NO_END.test(left)) current.push(blank())
+      if (!cjkJoin && !NO_START.test(right) && !NO_END.test(left)) {
+        const separator = blank()
+        const background = current[current.length - 1]?.style.bg
+        if (background && background === rest[0]?.style.bg) separator.style.bg = background
+        current.push(separator)
+      }
       current.push(...rest)
       continue
     }

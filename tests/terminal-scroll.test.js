@@ -3,7 +3,7 @@ import { test } from "node:test"
 import { TerminalInput } from "../web/dist/input.js"
 import { TerminalHistory, terminalScroll } from "../web/dist/terminal-scroll.js"
 
-function gestures() {
+function gestures(move) {
   const events = new Map()
   const host = {
     scrollTop: 0,
@@ -16,7 +16,11 @@ function gestures() {
   terminalScroll(
     host,
     () => paused,
-    (direction) => sent.push(direction),
+    (direction) => {
+      if (move?.(direction) === false) return false
+      sent.push(direction)
+      return true
+    },
   )
   return {
     host,
@@ -161,4 +165,125 @@ test("a pending application page blocks duplicate paging requests", async () => 
   )
   pending.resolve(null)
   assert.equal(await first, true)
+})
+
+test("pi paging stays busy after input acknowledgement until a changed screen is read", async () => {
+  const history = new TerminalHistory()
+  const screen = Promise.withResolvers()
+  let reads = 0
+  const first = history.move(
+    -1,
+    "pi",
+    async () => null,
+    async () => {
+      reads++
+      await screen.promise
+      return true
+    },
+  )
+  await Promise.resolve()
+  assert.equal(reads, 1, "input acknowledgement must start a screen read")
+  assert.equal(history.busy, true, "another page cannot overtake the pending screen")
+  assert.equal(await history.move(1, "pi", async () => assert.fail("duplicate page")), false)
+  screen.resolve()
+  assert.equal(await first, true)
+  assert.equal(history.busy, false)
+})
+
+test("pi paging retries stale screens without resending input", async () => {
+  const history = new TerminalHistory()
+  let sends = 0
+  let reads = 0
+  assert.equal(
+    await history.move(
+      1,
+      "pi",
+      async () => {
+        sends++
+        return null
+      },
+      async () => ++reads === 3,
+    ),
+    true,
+  )
+  assert.equal(sends, 1)
+  assert.equal(reads, 3)
+  await assert.rejects(
+    history.move(
+      1,
+      "pi",
+      async () => null,
+      async () => {
+        throw new Error("read failed")
+      },
+    ),
+    /read failed/,
+  )
+  assert.equal(history.busy, false)
+})
+
+test("an unchanged pi boundary has a finite refresh window and releases the page lock", async () => {
+  const history = new TerminalHistory()
+  let reads = 0
+  let sends = 0
+  await history.move(
+    -1,
+    "pi",
+    async () => {
+      sends++
+      return null
+    },
+    async () => {
+      reads++
+      return false
+    },
+  )
+  assert.equal(sends, 1)
+  assert.ok(reads >= 2 && reads <= 10, "unchanged screens are retried within one bounded window")
+  assert.equal(history.busy, false)
+})
+
+test("a sustained boundary wheel gesture pages once even after the repeat throttle expires", (t) => {
+  let now = 1000
+  t.mock.method(Date, "now", () => now)
+  const g = gestures()
+  for (let index = 0; index < 10; index++) {
+    g.fire("wheel", { deltaX: 0, deltaY: -80, deltaMode: 0 })
+    now += 60
+  }
+  assert.deepEqual(g.sent, [-1], "one continuous gesture must not turn into several remote pages")
+  now += 200
+  g.fire("wheel", { deltaX: 0, deltaY: -80, deltaMode: 0 })
+  assert.deepEqual(g.sent, [-1, -1], "a new gesture can read the next page")
+})
+
+test("a busy page rejection does not consume a new wheel gesture", async (t) => {
+  let now = 1000
+  t.mock.method(Date, "now", () => now)
+  const history = new TerminalHistory()
+  const pending = Promise.withResolvers()
+  const requests = []
+  let sends = 0
+  const g = gestures((direction) => {
+    if (history.busy) return false
+    requests.push(
+      history.move(direction, "pi", async () => {
+        if (++sends === 1) await pending.promise
+        return null
+      }),
+    )
+    return true
+  })
+  g.fire("wheel", { deltaX: 0, deltaY: -80, deltaMode: 0 })
+  now = 1450
+  g.fire("wheel", { deltaX: 0, deltaY: -80, deltaMode: 0 })
+  pending.resolve()
+  await requests[0]
+  for (let index = 0; index < 8; index++) {
+    now += 60
+    g.fire("wheel", { deltaX: 0, deltaY: -80, deltaMode: 0 })
+  }
+  await Promise.all(requests)
+  assert.equal(sends, 2, "the same gesture can retry once the previous page finishes")
+  assert.deepEqual(g.sent, [-1, -1])
 })

@@ -1,4 +1,9 @@
-import type { Cell } from "./ansi.js"
+import type { Cell, CellStyle } from "./ansi.js"
+import { cellColors, type Theme } from "./terminal-theme.js"
+
+function styleKey(style: CellStyle): string {
+  return `${style.fg};${style.bg};${style.bold};${style.italic};${style.dim};${style.underline};${style.reverse}`
+}
 
 function textLayer(canvas: HTMLCanvasElement): HTMLElement | null {
   return canvas.parentElement?.querySelector?.<HTMLElement>(".terminal-text") ?? null
@@ -34,6 +39,7 @@ interface TextMetrics {
   fontFamily: string
   scale: number
   inset: number
+  theme: Theme
 }
 
 interface SourceRange {
@@ -171,6 +177,8 @@ export class TerminalSelection {
     this.sourceOffsets.length = source.length
     this.sourceText = lines.join("\n")
     this.runs = []
+    const native = this.element.classList.contains("terminal-text-native")
+    const colors = new Map<string, ReturnType<typeof cellColors>>()
     const previous = this.lines
     this.lines = []
     for (const [index, cells] of rows.entries()) {
@@ -197,6 +205,13 @@ export class TerminalSelection {
         this.runs.push(...prior.runs)
         continue
       }
+      let appearance = ""
+      let previousStyle = ""
+      for (const [column, cell] of cells.entries()) {
+        const key = styleKey(cell.style)
+        if (key !== previousStyle) appearance += `${column}:${key}|`
+        previousStyle = key
+      }
       let mapping = ""
       let last = -1
       for (const [column, cell] of cells.entries()) {
@@ -205,8 +220,8 @@ export class TerminalSelection {
         if (position.start !== last) mapping += `${column}:${position.start};`
         last = position.end
       }
-      const key = `${cells.map((cell) => cell.ch || "\0").join("")}\u0001${mapping}${last}:${metrics.cellWidth * metrics.scale}`
-      if (prior?.key === key) {
+      const key = `${cells.map((cell) => cell.ch || "\0").join("")}\u0001${mapping}${last}:${appearance}`
+      if (!metricsChanged && prior?.key === key) {
         prior.cells = cells
         prior.start = start
         prior.end = sourceFinish
@@ -218,7 +233,11 @@ export class TerminalSelection {
       const line = this.doc.createElement("div")
       line.className = "terminal-text-row"
       let end = cells.length
-      while (end > 0 && (cells[end - 1]?.ch ?? "").trim() === "") end -= 1
+      while (end > 0) {
+        const cell = cells[end - 1]
+        if (cell && (cell.ch.trim() || cell.style.bg || cell.style.reverse || cell.style.underline)) break
+        end -= 1
+      }
       // A wide glyph retains its trailing column even though that cell has no text.
       if (cells[end]?.ch === "") end += 1
       for (let column = 0; column < end; ) {
@@ -228,6 +247,7 @@ export class TerminalSelection {
           continue
         }
         const position = positions.get(cell)
+        const appearance = styleKey(cell.style)
         let text = cell.ch
         let next = column + (cells[column + 1]?.ch === "" ? 2 : 1)
         let sourceEnd = position?.end ?? -1
@@ -235,14 +255,30 @@ export class TerminalSelection {
           while (next < end) {
             const candidate = cells[next]
             const point = candidate === undefined ? undefined : positions.get(candidate)
-            if (candidate === undefined || !/^[\x20-\x7e]$/.test(candidate.ch) || point?.start !== sourceEnd) break
+            if (
+              candidate === undefined ||
+              !/^[\x20-\x7e]$/.test(candidate.ch) ||
+              (position === undefined ? point !== undefined : point?.start !== sourceEnd) ||
+              styleKey(candidate.style) !== appearance
+            )
+              break
             text += candidate.ch
-            sourceEnd = point.end
+            sourceEnd = point?.end ?? -1
             next += 1
           }
         }
         const span = this.doc.createElement("span")
         span.style.width = `${(next - column) * metrics.cellWidth * metrics.scale}px`
+        let color = colors.get(appearance)
+        if (color === undefined) {
+          color = cellColors(cell.style, metrics.theme)
+          colors.set(appearance, color)
+        }
+        span.style.color = color.foreground
+        span.style.backgroundColor = native ? color.background : ""
+        span.style.fontWeight = cell.style.bold ? "bold" : "normal"
+        span.style.fontStyle = cell.style.italic ? "italic" : "normal"
+        span.style.textDecoration = native && cell.style.underline ? "underline" : "none"
         span.textContent = text
         line.append(span)
         if (position !== undefined) {

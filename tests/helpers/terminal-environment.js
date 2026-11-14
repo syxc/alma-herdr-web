@@ -64,7 +64,7 @@ export function environment(t, response = Promise.resolve(new Response(bytes)), 
     }),
   }
   const view = new TerminalView(canvas)
-  t.after(() => clearTimeout(view.scrollTimer))
+  t.after(() => clearTimeout(view.scrollPause.timer))
   return {
     view,
     operations,

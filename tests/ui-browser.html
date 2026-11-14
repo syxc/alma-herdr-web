@@ -13,7 +13,7 @@
   iframe {
     display: block;
     border: 0;
-    max-width: 100%;
+    max-width: none;
     background: white;
   }
   pre {
@@ -280,7 +280,12 @@
           const sourceWidth = terminal.paneCols * terminal.cellWidth
           const scale = terminal.rowHeight / terminal.cellHeight
           check(
-            terminal.fontSize === 14 &&
+            terminal.fontSize === 13 &&
+              terminal.cellHeight === 20 &&
+              Math.abs(
+                Number.parseFloat(child.getComputedStyle(childDoc.querySelector(".terminal-text")).fontSize) -
+                  13 * scale,
+              ) < 0.001 &&
               Math.abs(scale - (mode === "shrink" ? Math.min(1, usable / sourceWidth) : 1)) < 0.000001,
             `${prefix}normal font and correct downscale`,
           )
@@ -484,6 +489,26 @@
             center.left >= back.getBoundingClientRect().right && center.right <= actions.left,
             `${theme} ${width}px ${view}: header text does not overlap actions`,
           )
+          if (view === "detail") {
+            const tabMenu = el("tab-menu")
+            tabMenu.classList.remove("hidden")
+            await frame()
+            const tabBounds = tabMenu.getBoundingClientRect()
+            const trigger = el("tab-switch").getBoundingClientRect()
+            const offset = tabBounds.left + tabBounds.width / 2 - trigger.left - trigger.width / 2
+            check(
+              Math.abs(offset) < 0.5,
+              `${theme} ${width}px: terminal switch menu is centered on its trigger (offset ${offset.toFixed(2)}px)`,
+            )
+            check(
+              tabBounds.top >= header.bottom &&
+                tabBounds.left >= header.left + 12 &&
+                tabBounds.right <= header.right - 12 &&
+                tabMenu.scrollWidth <= tabMenu.clientWidth,
+              `${theme} ${width}px: terminal switch menu stays below header with 12px edge clearance and no overflow`,
+            )
+            tabMenu.classList.add("hidden")
+          }
           const menu = el(`${view === "detail" ? "action" : "list"}-menu`)
           menu.classList.remove("hidden")
           await frame()
@@ -533,7 +558,7 @@
                 [
                   ...chips.filter((button) => button.classList.contains("key-symbol")),
                   doc.querySelector(".keys-add"),
-                ].every((button) => style(button).fontSize === "20px"),
+                ].every((button) => style(button).fontSize === "17px"),
               `${theme} ${width}px: compact shortcuts keep touch targets and larger symbols`,
             )
             const inputCard = doc.querySelector(".realtime-input").getBoundingClientRect()

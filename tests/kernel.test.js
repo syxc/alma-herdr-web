@@ -52,6 +52,46 @@ test("repeated snapshot replay reuses its WASM color parameters", async () => {
   kernel.free()
 })
 
+test("dense SGR snapshots retain the same history and replay width as plain text", async () => {
+  const kernel = await openKernel()
+  try {
+    const widths = []
+    const resize = kernel.resize.bind(kernel)
+    kernel.resize = (cols, rows) => {
+      widths.push(cols)
+      resize(cols, rows)
+    }
+    const lines = Array.from(
+      { length: 1000 },
+      (_, row) =>
+        `${row}: 中文 ${Array.from({ length: 200 }, (_, column) => String.fromCharCode(65 + ((row + column) % 26))).join("")}`,
+    )
+    const plain = kernel.setContent(lines.join("\n"), 24)
+    const colored = lines
+      .map((line) =>
+        [...line]
+          .map((ch, column) => `\x1b[38;2;${100 + (column % 120)};120;180;48;2;40;44;52;1;3;4m${ch}\x1b[0m`)
+          .join(""),
+      )
+      .join("\n")
+    const styled = kernel.setContent(colored, 24)
+    assert.equal(plain.rows.length, lines.length)
+    assert.equal(styled.rows.length, lines.length)
+    assert.deepEqual(
+      styled.rows.map((row) => row.map((cell) => cell.ch).join("")),
+      lines,
+    )
+    assert.equal(widths[1], widths[0])
+    assert.equal(styled.rows[0][0].fg, "#6478b4")
+    assert.equal(styled.rows[0][0].bg, "#282c34")
+    assert.equal(styled.rows[0][0].bold, true)
+    assert.equal(styled.rows[0][0].italic, true)
+    assert.equal(styled.rows[0][0].underline, true)
+  } finally {
+    kernel.free()
+  }
+})
+
 test("a character that is wider than one column owns the column after it", async () => {
   const kernel = await openKernel()
   const screen = kernel.setContent("你好 world", 5)

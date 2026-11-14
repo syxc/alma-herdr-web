@@ -84,7 +84,7 @@ test("style-only changes repaint the affected visible rows and erase removed tex
   lines[5] = ""
   await view.setContent(lines.join("\n"), 24)
   assert.ok(
-    operations.some((op) => op.kind === "rect" && op.y === 5 * 21),
+    operations.some((op) => op.kind === "rect" && op.y === 5 * view.cellHeight),
     "erased text clears its old row",
   )
 })
