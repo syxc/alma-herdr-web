@@ -70,7 +70,7 @@ UI 颜色集中在 `web/style.css`；终端默认色和 ANSI 16 色来自 Alma 4
 
 `TerminalInput` 维护本地编辑状态，`KeyQueue` 按 16ms 窗口合并相邻文字或按键。API 再按请求顺序串行发送，防止网络处理乱序。切换面板前先发送原面板的待发队列，避免把输入送到新面板。
 
-herdr 0.9.5 支持 enter、esc、backspace、tab、方向键、f1 至 f12 及 ctrl/alt/shift 组合。Home/End 映射为 ctrl+a/ctrl+e；Delete 不映射为 ctrl+d，以免触发 EOF。Cmd 组合键保留给浏览器。补充平面字符的退格和左右移动保持代理对完整，中间编辑后保留输入框光标位置。中文组合输入在 `compositionend` 时同步已确认文本，不依赖其后另发普通 `input` 事件；若后续 `input` 到达则按当前编辑状态去重，组合确认键不提交终端命令。
+herdr 0.9.5 支持 enter、esc、backspace、tab、方向键、f1 至 f12 及 ctrl/alt/shift 组合。Home/End 映射为 ctrl+a/ctrl+e；Delete 不映射为 ctrl+d，以免触发 EOF。终端文本层的 Cmd+A 全选输出；已有输出选区时 Ctrl+A 扩选全部输出，无选区时 Ctrl+A 仍发送远端行首控制键。输入框的 Ctrl+A 同样发送行首控制键。其余 Cmd 组合键保留给浏览器。补充平面字符的退格和左右移动保持代理对完整，中间编辑后保留输入框光标位置。中文组合输入在 `compositionend` 时同步已确认文本，不依赖其后另发普通 `input` 事件；若后续 `input` 到达则按当前编辑状态去重，组合确认键不提交终端命令。
 
 ## 渲染与滚动
 

@@ -104,16 +104,29 @@ view.follow = false
 host.scrollTop = Math.floor(host.scrollHeight / 2)
 await new Promise((resolve) => setTimeout(resolve, 250))
 if (view.nativeText) {
+  const sent = []
   const input = new TerminalInput(document.createElement("input"), canvas, {
-    sendText: async () => null,
-    sendKeys: async () => null,
+    sendText: () => {
+      throw new Error("navigation cannot type text")
+    },
+    sendKeys: (keys) => sent.push(keys),
   })
+  input.setEnabled(true)
   const before = host.scrollTop
   input.focusScreen()
   check(
     document.activeElement === layer && host.scrollTop === before,
     "desktop focus preserves the native reading position",
   )
+  layer.dispatchEvent(new KeyboardEvent("keydown", { key: "a", ctrlKey: true, bubbles: true, cancelable: true }))
+  await new Promise((resolve) => setTimeout(resolve, 40))
+  check(
+    JSON.stringify(sent) === JSON.stringify([["ctrl+a"]]) && document.getSelection().isCollapsed,
+    "Ctrl+A without output selection reaches the remote terminal",
+  )
+  layer.dispatchEvent(new KeyboardEvent("keydown", { key: "a", metaKey: true, bubbles: true, cancelable: true }))
+  check(view.selection.selectedText() !== null && sent.length === 1, "Cmd+A selects output without remote input")
+  view.clearSelection()
 }
 let glyphs = 0
 let rebases = 0

@@ -310,7 +310,7 @@ export class TerminalInput {
     const selection = terminalSelection(this.canvas)
     const command = event.ctrlKey || event.metaKey
     if (selection !== null && command && event.key.toLowerCase() === "c") return
-    if (command && event.key.toLowerCase() === "a" && (selection !== null || event.target !== this.canvas)) {
+    if (command && event.key.toLowerCase() === "a" && (selection !== null || event.metaKey)) {
       selectTerminalText(this.canvas)
       event.preventDefault()
       return
