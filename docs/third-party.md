@@ -39,9 +39,7 @@ curl -fL https://raw.githubusercontent.com/notofonts/noto-fonts/ffebf8c1ee449e54
 uv run --no-project --with 'fonttools[woff]==4.68.0' python scripts/subset-terminal-symbols.py --source dist/noto-symbols-source.ttf
 ```
 
-加 `--check` 只核对已有播放符号分包。许可证分别见 `nerd-fonts/LICENSE` 和 `nerd-fonts/terminal-symbols/LICENSE`。
-
-构建后运行 `node scripts/check-icon-font-browser.mjs`，打开输出地址。首页检查 Canvas 回退路径的按需下载、失败重试、静止画面补绘、全部字符宽度及每页字形像素；原生文本路径见 `/native`。播放符号检查强制使用自带字体，避免系统字体掩盖缺字。重新运行 HTTP 失败检查前需重启该服务。
+加 `--check` 只核对已有播放符号分包。许可证分别见 `nerd-fonts/LICENSE` 和 `nerd-fonts/terminal-symbols/LICENSE`。字体加载行为由 `node scripts/check-icon-font-browser.mjs` 检查。
 
 ## 终端内核
 
