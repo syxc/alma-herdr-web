@@ -711,6 +711,11 @@ button.active {
   box-shadow: 0 8px 24px var(--popover-shadow);
 }
 
+#tab-menu {
+  left: 50%;
+  transform: translateX(-50%);
+}
+
 .new-terminal-menu {
   left: auto;
   right: 12px;

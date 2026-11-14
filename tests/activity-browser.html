@@ -90,12 +90,12 @@ try {
     "Detail menu keeps connection details available",
   )
   const appearance = doc.querySelector("#action-menu [data-appearance-select]")
-  const canvas = doc.querySelector("#terminal")
-  const pixel = () => {
-    const ratio = frame.contentWindow.devicePixelRatio
-    return [...canvas.getContext("2d").getImageData(Math.floor(25 * ratio), Math.floor(19 * ratio), 1, 1).data]
-      .slice(0, 3)
-      .join(",")
+  const surfaceColor = () => {
+    const run = [...doc.querySelectorAll(".terminal-text-native span")].find((span) =>
+      span.textContent.includes("recovery-check"),
+    )
+    if (run === undefined) return ""
+    return frame.contentWindow.getComputedStyle(run).backgroundColor.match(/\d+/g)?.slice(0, 3).join(",") ?? ""
   }
   for (const choice of ["light", "dark", "system"]) {
     appearance.value = choice
@@ -107,7 +107,7 @@ try {
           : "light"
         : choice
     const expected = theme === "dark" ? "45,49,58" : "240,240,240"
-    await until(() => doc.documentElement.dataset.theme === theme && pixel() === expected)
+    await until(() => doc.documentElement.dataset.theme === theme && surfaceColor() === expected)
     check(true, `${choice}: Appearance menu switches page and fixed RGB terminal surfaces together`)
   }
   doc.querySelector("#detail-more").click()

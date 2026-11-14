@@ -37,7 +37,7 @@ export class TerminalView {
   private laidOut: Cell[][] = []
   private paneCols = 0
   private paneRows = 0
-  private fontSize = 14
+  private fontSize = 13
   private readonly fontFamily = 'ui-monospace, SFMono-Regular, Menlo, Consolas, "Symbols Nerd Font Mono", monospace'
   private cellWidth = 8
   private cellHeight = 16
