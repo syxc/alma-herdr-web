@@ -1,6 +1,7 @@
 import type { SessionSnapshot } from "./api.js"
 import { ICONS } from "./icons.js"
 import { type AgentStatus, agentStatus, agentStatusLabel } from "./navigation-state.js"
+import { paneNumbers } from "./session-list.js"
 
 interface TreeOptions {
   snapshot: SessionSnapshot | null
@@ -17,6 +18,7 @@ export function renderWorkspaceTree(container: HTMLElement, options: TreeOptions
   const doc = container.ownerDocument
   container.replaceChildren()
   if (snapshot === null) return
+  const numbers = paneNumbers(snapshot.panes)
 
   function row(
     kind: string,
@@ -104,22 +106,21 @@ export function renderWorkspaceTree(container: HTMLElement, options: TreeOptions
     heading.append(workspaceRow, toggle)
     section.append(heading)
     for (const tab of snapshot.tabs.filter((candidate) => candidate.workspace_id === workspace.workspace_id)) {
+      const tabPanes = snapshot.panes.filter((candidate) => candidate.tab_id === tab.tab_id)
       const item = doc.createElement("li")
       item.className = "tree-tab"
-      const tabRow = row(
-        "Tab",
-        tab.label || tab.tab_id,
-        "",
-        () => onTab(tab.tab_id),
-        snapshot.panes.some((pane) => pane.tab_id === tab.tab_id),
-      )
+      // A merged core tab has no friendly label. Show the same consecutive
+      // number as the list and switcher instead of its long opaque id.
+      const firstNumber = tabPanes.length > 0 ? numbers.get(tabPanes[0]!.pane_id) : undefined
+      const tabLabel = tab.label || (firstNumber === undefined ? "" : String(firstNumber))
+      const tabRow = row("Tab", tabLabel, "", () => onTab(tab.tab_id), tabPanes.length > 0)
       tabRow.dataset.tab = tab.tab_id
       item.append(tabRow)
       const panes = doc.createElement("ul")
       panes.className = "tree-panes"
-      for (const pane of snapshot.panes.filter((candidate) => candidate.tab_id === tab.tab_id)) {
+      for (const pane of tabPanes) {
         const paneItem = doc.createElement("li")
-        const title = pane.terminal_title_stripped || pane.title || pane.agent || pane.pane_id
+        const title = pane.terminal_title_stripped || pane.title || pane.label || pane.agent || "Pane"
         const paneRow = row("Pane", title, agentStatus(pane, options.connected), () => onPane(pane.pane_id))
         paneRow.dataset.pane = pane.pane_id
         if (pane.pane_id === selectedPaneId) {

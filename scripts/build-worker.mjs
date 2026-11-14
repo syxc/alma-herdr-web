@@ -13,6 +13,13 @@ for (const file of ["index.html", "style.css"]) {
   await writeFile(join(output, file), await readFile(join(source, file)))
 }
 
+// The hosted bundle has no local agent. Stamp the page so the client skips
+// the /api/auth and /api/state probes instead of logging two expected 404s.
+// The local agent serves web/index.html unstamped and keeps its API contract.
+const shell = await readFile(join(output, "index.html"), "utf8")
+const marker = "<script>window.__ALMA_STATIC__=true;</script>"
+await writeFile(join(output, "index.html"), shell.replace("<head>", `<head>${marker}\n`))
+
 async function copyAssets(directory) {
   for (const entry of await readdir(join(source, directory), { withFileTypes: true })) {
     const relative = join(directory, entry.name)
